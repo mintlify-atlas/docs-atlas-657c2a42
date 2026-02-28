@@ -83,7 +83,7 @@ typedef struct {
 } HostContext;
 
 HostContext context = {44100, NULL};
-CSO UND *csound = csoundCreate(&context, NULL);
+CSOUND *csound = csoundCreate(&context, NULL);
 
 // Later, retrieve the host data
 HostContext *ctx = (HostContext*)csoundGetHostData(csound);
