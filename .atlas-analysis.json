@@ -1,0 +1,221 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "Csound",
+  "projectDescription": "A sound and music computing system for audio synthesis and signal processing",
+  "theme": "aspen",
+  "primaryColor": "#1E40AF",
+  "lightColor": "#60A5FA",
+  "darkColor": "#1E3A8A",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/architecture",
+              "concepts/audio-engine",
+              "concepts/opcodes",
+              "concepts/instruments"
+            ]
+          },
+          {
+            "group": "Building from Source",
+            "pages": [
+              "building/requirements",
+              "building/macos",
+              "building/linux",
+              "building/windows",
+              "building/mobile"
+            ]
+          },
+          {
+            "group": "Language Bindings",
+            "pages": [
+              "bindings/overview",
+              "bindings/c-api",
+              "bindings/cpp",
+              "bindings/python",
+              "bindings/javascript",
+              "bindings/java"
+            ]
+          },
+          {
+            "group": "Platform Support",
+            "pages": [
+              "platforms/overview",
+              "platforms/desktop",
+              "platforms/web-assembly",
+              "platforms/ios",
+              "platforms/android",
+              "platforms/embedded"
+            ]
+          },
+          {
+            "group": "Plugin Development",
+            "pages": [
+              "plugins/overview",
+              "plugins/opcode-framework",
+              "plugins/creating-opcodes",
+              "plugins/examples"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "C API",
+            "pages": [
+              "api/c/overview",
+              "api/c/initialization",
+              "api/c/compilation",
+              "api/c/performance",
+              "api/c/audio-io",
+              "api/c/messaging",
+              "api/c/channels",
+              "api/c/tables",
+              "api/c/utilities"
+            ]
+          },
+          {
+            "group": "C++ API",
+            "pages": [
+              "api/cpp/overview",
+              "api/cpp/csound-class",
+              "api/cpp/plugin-framework",
+              "api/cpp/performance-thread"
+            ]
+          },
+          {
+            "group": "Python API",
+            "pages": [
+              "api/python/overview",
+              "api/python/ctcsound",
+              "api/python/examples"
+            ]
+          },
+          {
+            "group": "JavaScript API",
+            "pages": [
+              "api/javascript/overview",
+              "api/javascript/browser",
+              "api/javascript/nodejs",
+              "api/javascript/events"
+            ]
+          },
+          {
+            "group": "Core Headers",
+            "pages": [
+              "api/headers/csound",
+              "api/headers/csoundcore",
+              "api/headers/plugin",
+              "api/headers/compiler",
+              "api/headers/audio-io",
+              "api/headers/midi-io"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Guides",
+        "groups": [
+          {
+            "group": "Usage",
+            "pages": [
+              "guides/command-line",
+              "guides/embedding",
+              "guides/realtime-audio",
+              "guides/midi",
+              "guides/file-formats"
+            ]
+          },
+          {
+            "group": "Development",
+            "pages": [
+              "guides/contributing",
+              "guides/build-system",
+              "guides/testing",
+              "guides/ci-cd"
+            ]
+          },
+          {
+            "group": "Migration",
+            "pages": [
+              "guides/migration/v6-to-v7",
+              "guides/migration/api-changes",
+              "guides/migration/deprecations"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Utilities",
+        "groups": [
+          {
+            "group": "Analysis Tools",
+            "pages": [
+              "utilities/overview",
+              "utilities/atsa",
+              "utilities/pvanal",
+              "utilities/lpanal",
+              "utilities/hetro",
+              "utilities/cvanal"
+            ]
+          },
+          {
+            "group": "File Tools",
+            "pages": [
+              "utilities/sndinfo",
+              "utilities/srconv",
+              "utilities/mixer",
+              "utilities/scale"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Real-time audio synthesis and processing",
+    "Extensive library of 1500+ opcodes",
+    "Multi-platform support (desktop, mobile, web)",
+    "Language bindings for C, C++, Python, JavaScript, Java",
+    "Plugin system for custom opcodes",
+    "WebAssembly support for browser integration",
+    "MIDI and OSC support",
+    "Advanced spectral processing",
+    "Physical modeling synthesis",
+    "Ambisonics and spatial audio"
+  ],
+  "publicApiSurface": [
+    "csoundCreate() - Create Csound instance",
+    "csoundCompile() - Compile CSD file",
+    "csoundCompileOrc() - Compile orchestra code",
+    "csoundPerformKsmps() - Process audio blocks",
+    "csoundStart() - Start performance",
+    "csoundReset() - Reset instance",
+    "csoundGetSr() - Get sample rate",
+    "csoundGetKsmps() - Get control period",
+    "csoundGetSpin() / csoundGetSpout() - Audio buffers",
+    "csoundSetOption() - Set runtime options",
+    "csoundGetInputChannel() / csoundSetOutputChannel() - Software bus",
+    "csoundTableGet() / csoundTableSet() - Function table access",
+    "csoundScoreEvent() - Send score events",
+    "csoundRunUtility() - Execute utilities",
+    "Plugin framework - Custom opcode development",
+    "CsoundPerformanceThread - Threading support",
+    "JavaScript/WASM API - Browser integration",
+    "Python ctcsound - Python bindings"
+  ]
+}
