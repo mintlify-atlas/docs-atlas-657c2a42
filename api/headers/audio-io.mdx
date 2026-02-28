@@ -1,0 +1,367 @@
+---
+title: csound_rtaudio.h
+description: Real-time audio I/O module interface
+---
+
+The `csound_rtaudio.h` header defines the interface for implementing real-time audio I/O modules in Csound. It provides structures and callbacks for audio backends.
+
+## Overview
+
+This header is used by:
+- Audio backend module developers
+- Custom audio I/O implementations
+- Host applications bypassing default I/O
+
+It defines the contract between Csound and its audio backends (PortAudio, JACK, ALSA, CoreAudio, etc.).
+
+## Key structures
+
+### Real-time audio parameters
+
+```c
+typedef struct {
+  char *devName;                // Device name (NULL/empty: default)
+  int32_t devNum;               // Device number (0-1023, 1024: default)
+  uint32_t bufSamp_SW;          // Buffer fragment size (-b) in frames
+  int32_t bufSamp_HW;           // Total buffer size (-B) in frames
+  int32_t nChannels;            // Number of channels
+  int32_t sampleFormat;         // Sample format (AE_SHORT etc.)
+  float sampleRate;             // Sample rate in Hz
+  int32_t ksmps;                // Control period size
+} csRtAudioParams;
+```
+
+**Fields:**
+
+- `devName` - Device identifier string (backend-specific)
+- `devNum` - Numeric device ID; 1024 means use default device
+- `bufSamp_SW` - Software buffer size in sample frames (set by `-b`)
+- `bufSamp_HW` - Hardware buffer size in sample frames (set by `-B`)
+- `nChannels` - Number of audio channels
+- `sampleFormat` - Audio sample format constant
+- `sampleRate` - Sampling rate in Hertz
+- `ksmps` - Number of samples per control period
+
+## Callback function types
+
+### Device open callback
+
+```c
+typedef int32_t (*devOpenFunc)(CSOUND *, const csRtAudioParams *);
+```
+
+Called to open an audio device for input or output.
+
+**Returns:**
+- 0 on success
+- Non-zero error code on failure
+
+### Audio output callback
+
+```c
+typedef void (*audioOutFunc)(CSOUND *, const MYFLT *, int32_t);
+```
+
+Called to write audio samples to output device.
+
+**Parameters:**
+- `csound` - Csound instance
+- `buffer` - Output buffer (MYFLT samples)
+- `nframes` - Number of sample frames to write
+
+### Audio input callback
+
+```c
+typedef int32_t (*audioInFunc)(CSOUND *, MYFLT *, int32_t);
+```
+
+Called to read audio samples from input device.
+
+**Parameters:**
+- `csound` - Csound instance
+- `buffer` - Input buffer to fill
+- `nframes` - Number of sample frames to read
+
+**Returns:**
+- 0 on success
+- Non-zero on error
+
+### Device list callback
+
+```c
+typedef int32_t (*audioDevListFunc)(CSOUND *, CS_AUDIODEVICE *, int32_t);
+```
+
+Called to enumerate available audio devices.
+
+**Parameters:**
+- `csound` - Csound instance
+- `list` - Array to fill with device info (NULL to get count)
+- `isOutput` - 1 for output devices, 0 for input devices
+
+**Returns:**
+- Number of devices available
+
+## API functions
+
+### User data access
+
+```c
+PUBLIC void **csoundGetRtRecordUserData(CSOUND *);
+PUBLIC void **csoundGetRtPlayUserData(CSOUND *);
+```
+
+Get pointers to backend-specific user data storage.
+
+**Usage:**
+```c
+void **userData = csoundGetRtPlayUserData(csound);
+MyBackendData *data = (MyBackendData *)*userData;
+```
+
+### Register callbacks
+
+#### Set playback open callback
+
+```c
+PUBLIC void csoundSetPlayopenCallback(CSOUND *, devOpenFunc);
+```
+
+Register function to open audio output device.
+
+#### Set playback callback
+
+```c
+PUBLIC void csoundSetRtplayCallback(CSOUND *, audioOutFunc);
+```
+
+Register function to write audio output.
+
+#### Set recording open callback
+
+```c
+PUBLIC void csoundSetRecopenCallback(CSOUND *, devOpenFunc);
+```
+
+Register function to open audio input device.
+
+#### Set recording callback
+
+```c
+PUBLIC void csoundSetRtrecordCallback(CSOUND *, audioInFunc);
+```
+
+Register function to read audio input.
+
+#### Set close callback
+
+```c
+PUBLIC void csoundSetRtcloseCallback(CSOUND *, void (*)(CSOUND *));
+```
+
+Register function to close audio devices.
+
+#### Set device list callback
+
+```c
+PUBLIC void csoundSetAudioDeviceListCallback(CSOUND *, audioDevListFunc);
+```
+
+Register function to enumerate devices.
+
+### Host audio I/O
+
+```c
+PUBLIC void csoundSetHostAudioIO(CSOUND *);
+```
+
+Disable default Csound audio I/O handling. Call after `csoundCreate()` and before performance to use custom I/O.
+
+When this is called:
+- Host must handle audio I/O directly
+- Access audio via `csoundGetSpin()` and `csoundGetSpout()`
+- Call `csoundPerformKsmps()` to process audio blocks
+
+**Example:**
+```c
+csound = csoundCreate(NULL, NULL);
+csoundSetHostAudioIO(csound);
+csoundCompile(csound, argc, argv);
+csoundStart(csound);
+
+while (!done) {
+  // Fill spin buffer with input
+  MYFLT *spin = csoundGetSpin(csound);
+  // ... read audio into spin ...
+  
+  // Process
+  csoundPerformKsmps(csound);
+  
+  // Get output from spout
+  const MYFLT *spout = csoundGetSpout(csound);
+  // ... write spout to audio output ...
+}
+```
+
+### Set audio module
+
+```c
+PUBLIC void csoundSetRTAudioModule(CSOUND *csound, const char *module);
+```
+
+Set the current RT audio backend module by name.
+
+**Parameters:**
+- `module` - Module name (e.g., "portaudio", "jack", "alsa")
+
+## Sample formats
+
+The `sampleFormat` field uses constants defined in Csound:
+
+```c
+AE_SHORT    // 16-bit signed integer
+AE_LONG     // 32-bit signed integer  
+AE_FLOAT    // 32-bit float
+AE_DOUBLE   // 64-bit float (not commonly used)
+```
+
+## Buffer size parameters
+
+### Software buffer (bufSamp_SW)
+
+- Set by `-b` command-line option
+- Csound's internal processing buffer
+- Typically smaller than hardware buffer
+- Should be multiple of ksmps for efficiency
+
+### Hardware buffer (bufSamp_HW)
+
+- Set by `-B` command-line option
+- Audio driver's buffer size
+- Larger values: more latency, more stable
+- Smaller values: less latency, more CPU
+
+Typical relationship: `bufSamp_HW >= bufSamp_SW * 2`
+
+## Implementing an audio backend
+
+### Basic structure
+
+```c
+// Backend-specific data
+typedef struct {
+  void *stream;
+  int32_t running;
+  // ... other state ...
+} MyAudioBackend;
+
+// Open output device
+static int32_t playopen(CSOUND *csound, const csRtAudioParams *parm) {
+  MyAudioBackend *backend = malloc(sizeof(MyAudioBackend));
+  void **userData = csoundGetRtPlayUserData(csound);
+  *userData = backend;
+  
+  // Initialize audio device with parm settings
+  // ...
+  
+  return 0;  // Success
+}
+
+// Write audio output
+static void rtplay(CSOUND *csound, const MYFLT *outBuf, int32_t nbytes) {
+  void **userData = csoundGetRtPlayUserData(csound);
+  MyAudioBackend *backend = (MyAudioBackend *)*userData;
+  
+  // Write samples to device
+  // ...
+}
+
+// Close device
+static void rtclose(CSOUND *csound) {
+  void **userData = csoundGetRtPlayUserData(csound);
+  MyAudioBackend *backend = (MyAudioBackend *)*userData;
+  
+  // Cleanup
+  free(backend);
+}
+
+// Module initialization
+PUBLIC int32_t csoundModuleInit(CSOUND *csound) {
+  csoundSetPlayopenCallback(csound, playopen);
+  csoundSetRtplayCallback(csound, rtplay);
+  csoundSetRtcloseCallback(csound, rtclose);
+  return 0;
+}
+```
+
+### Device enumeration
+
+```c
+static int32_t audio_dev_list(CSOUND *csound, CS_AUDIODEVICE *list, 
+                              int32_t isOutput) {
+  if (list == NULL) {
+    // Return count of devices
+    return get_device_count(isOutput);
+  }
+  
+  // Fill list array
+  int32_t count = 0;
+  for each device {
+    strncpy(list[count].device_name, name, 128);
+    strncpy(list[count].device_id, id, 128);
+    strncpy(list[count].rt_module, "mymodule", 128);
+    list[count].max_nchnls = channels;
+    list[count].isOutput = isOutput;
+    count++;
+  }
+  
+  return count;
+}
+```
+
+## Usage by host applications
+
+### Using default audio backend
+
+```c
+csound = csoundCreate(NULL, NULL);
+csoundSetOption(csound, "-odac");   // Use default output
+csoundSetOption(csound, "-iadc");   // Use default input
+// Csound handles all audio I/O automatically
+```
+
+### Custom audio I/O
+
+```c
+csound = csoundCreate(NULL, NULL);
+csoundSetHostAudioIO(csound);        // Disable default I/O
+
+// Implement your own audio callback:
+while (running) {
+  MYFLT *spin = csoundGetSpin(csound);
+  // Read from your audio source into spin
+  
+  csoundPerformKsmps(csound);
+  
+  const MYFLT *spout = csoundGetSpout(csound);
+  // Write spout to your audio destination
+}
+```
+
+## Thread safety
+
+Audio callbacks may be called from:
+- Real-time audio threads
+- High-priority system threads
+- Different threads than main Csound thread
+
+Best practices:
+- Keep callbacks fast and non-blocking
+- Avoid memory allocation in callbacks
+- Use lock-free techniques when possible
+- Don't call blocking Csound API functions from callbacks
+
+## See also
+
+- [csound.h](/api/headers/csound) - Main API with audio I/O functions
+- [csound_rtmidi.h](/api/headers/midi-io) - MIDI I/O interface

@@ -1,0 +1,294 @@
+---
+title: Python API overview
+description: Learn how to use Csound with Python through the ctcsound module
+---
+
+The Python API for Csound provides a comprehensive interface to the Csound audio synthesis engine through the `ctcsound` module. This module uses Python's ctypes library to bind directly to the native Csound C API.
+
+## Installation
+
+To use the Csound Python API, you need both Csound and the Python bindings installed.
+
+### Install Csound
+
+First, install Csound on your system:
+
+<CodeGroup>
+
+```bash Linux
+sudo apt-get install csound libcsound64-dev
+```
+
+```bash macOS
+brew install csound
+```
+
+```bash Windows
+# Download and install from csound.com
+# Then ensure csound64.dll is in your PATH
+```
+
+</CodeGroup>
+
+### Install Python bindings
+
+The ctcsound module is typically included with Csound installations. You can verify it's available:
+
+```python
+import ctcsound
+print(ctcsound.csound_initialize(0))
+```
+
+### Requirements
+
+- Python 3.x
+- NumPy >= 1.16 (not compatible with 1.15.x)
+- Csound 6.x or 7.x
+
+<Warning>
+The ctcsound module will not work with NumPy 1.15.x due to PEP 3118 compatibility issues. Use NumPy < 1.15 or >= 1.16.
+</Warning>
+
+## Basic architecture
+
+### Core classes
+
+The Python API provides two main classes:
+
+- **`Csound`** - Main interface to the Csound engine
+- **`CsoundPerformanceThread`** - Runs Csound in a separate thread for concurrent operation
+
+### Data types
+
+The API uses several important data types:
+
+- **`MYFLT`** - Csound's floating-point type (typically `double`)
+- **`CsoundParams`** - Configuration structure for Csound parameters
+- **`ControlChannelHints`** - Hints for control channel GUIs
+- **`CsoundAudioDevice`** - Audio device information
+- **`CsoundMidiDevice`** - MIDI device information
+
+### Constants
+
+#### Return codes
+
+```python
+CSOUND_SUCCESS = 0           # Completed successfully
+CSOUND_ERROR = -1            # Unspecified failure
+CSOUND_INITIALIZATION = -2   # Failed during initialization
+CSOUND_PERFORMANCE = -3      # Failed during performance
+CSOUND_MEMORY = -4           # Failed to allocate memory
+CSOUND_SIGNAL = -5           # Terminated by signal
+```
+
+#### Channel types
+
+```python
+CSOUND_CONTROL_CHANNEL = 1
+CSOUND_AUDIO_CHANNEL = 2
+CSOUND_STRING_CHANNEL = 3
+CSOUND_PVS_CHANNEL = 4
+CSOUND_VAR_CHANNEL = 5
+CSOUND_ARRAY_CHANNEL = 6
+
+CSOUND_INPUT_CHANNEL = 16
+CSOUND_OUTPUT_CHANNEL = 32
+```
+
+#### Event types
+
+```python
+CS_INSTR_EVENT = 0  # Instrument instance
+CS_TABLE_EVENT = 1  # Function table instance
+CS_END_EVENT = 2    # End event
+```
+
+## Workflow patterns
+
+### Synchronous performance
+
+The most basic pattern for running Csound synchronously:
+
+```python
+import ctcsound
+
+# Create instance
+cs = ctcsound.Csound()
+
+# Compile CSD file
+cs.compile_("myfile.csd")
+
+# Start performance
+cs.start()
+
+# Perform until complete
+while cs.perform_ksmps() == 0:
+    pass
+
+# Clean up
+cs.reset()
+```
+
+### Threaded performance
+
+For real-time applications, use the performance thread:
+
+```python
+import ctcsound
+
+# Create and compile
+cs = ctcsound.Csound()
+cs.compile_("myfile.csd")
+
+# Create performance thread
+pt = ctcsound.CsoundPerformanceThread(cs.csound())
+pt.play()
+
+# Do other work while Csound plays...
+
+# Wait for completion
+pt.join()
+```
+
+### Interactive performance
+
+For interactive applications with real-time control:
+
+```python
+import ctcsound
+import time
+
+cs = ctcsound.Csound()
+
+# Compile orchestra code
+orc = '''
+sr = 44100
+ksmps = 64
+nchnls = 2
+0dbfs = 1
+
+instr 1
+kfreq chnget "frequency"
+a1 oscili 0.5, kfreq
+outs a1, a1
+endin
+'''
+
+cs.compile_orc(orc)
+cs.start()
+
+# Set initial frequency
+cs.set_control_channel("frequency", 440.0)
+
+# Start instrument
+cs.event_string("i 1 0 -1")
+
+# Change frequency over time
+for freq in range(440, 880, 10):
+    cs.set_control_channel("frequency", float(freq))
+    cs.perform_ksmps()
+    time.sleep(0.1)
+
+# Stop
+cs.event_string("e")
+cs.reset()
+```
+
+## NumPy integration
+
+The ctcsound module seamlessly integrates with NumPy for efficient audio processing:
+
+```python
+import ctcsound
+import numpy as np
+
+cs = ctcsound.Csound()
+cs.compile_("myfile.csd")
+cs.start()
+
+# Get audio buffers as NumPy arrays
+spout = cs.spout()
+spin = cs.spin()
+
+# Process audio
+while cs.perform_ksmps() == 0:
+    # Read output buffer
+    output_data = spout.copy()
+    
+    # Process with NumPy
+    processed = output_data * 0.5
+    
+    # Write to input buffer if needed
+    spin[:] = processed
+```
+
+## Channel communication
+
+Channels provide the primary mechanism for communication between host and Csound:
+
+```python
+import ctcsound
+
+cs = ctcsound.Csound()
+cs.compile_orc(orc)
+cs.start()
+
+# Control channels (single values)
+cs.set_control_channel("volume", 0.8)
+value, err = cs.control_channel("volume")
+
+# Audio channels (arrays)
+import numpy as np
+audio_data = np.zeros(cs.ksmps(), dtype=ctcsound.MYFLT)
+cs.set_audio_channel("audioIn", audio_data)
+
+# String channels
+cs.set_string_channel("filename", "sample.wav")
+filename = cs.string_channel("filename")
+```
+
+## Error handling
+
+Always check return values for errors:
+
+```python
+import ctcsound
+
+cs = ctcsound.Csound()
+
+result = cs.compile_("myfile.csd")
+if result != ctcsound.CSOUND_SUCCESS:
+    print(f"Compilation failed with error code: {result}")
+    exit(1)
+
+result = cs.start()
+if result != ctcsound.CSOUND_SUCCESS:
+    print(f"Start failed with error code: {result}")
+    exit(1)
+```
+
+## Platform considerations
+
+### Library loading
+
+The ctcsound module automatically detects and loads the appropriate Csound library:
+
+- **Linux**: `libcsound64.so`
+- **macOS**: `CsoundLib64` (via `find_library`)
+- **Windows**: `csound64.dll` (via `find_library` on Python 3.8+)
+
+### Python version compatibility
+
+On Windows with Python < 3.8, the library loading mechanism differs. Ensure the Csound DLL is in your system PATH.
+
+## Next steps
+
+- Read the [ctcsound module reference](/api/python/ctcsound) for complete API documentation
+- See [Python usage examples](/api/python/examples) for common patterns and use cases
+- Explore the [C API reference](/api/c/csound) for underlying functionality
+
+## Resources
+
+- [Csound manual](https://csound.com/docs/manual/)
+- [NumPy documentation](https://numpy.org/doc/)
+- [Python ctypes documentation](https://docs.python.org/3/library/ctypes.html)

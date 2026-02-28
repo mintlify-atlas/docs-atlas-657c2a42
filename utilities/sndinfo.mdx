@@ -1,0 +1,236 @@
+---
+title: sndinfo
+description: Sound file information utility
+---
+
+The `sndinfo` utility displays detailed information about audio files including format, sample rate, bit depth, duration, and optional instrument/broadcast metadata.
+
+## Syntax
+
+```bash
+sndinfo [options] soundfile [soundfile ...]
+```
+
+## Arguments
+
+- `soundfile` - One or more sound files to examine
+
+## Options
+
+| Option | Description |
+|--------|-------------|
+| `-i` | Display instrument information (sample loops, base note, velocity) |
+| `-i<N>` | Display instrument information with detail level N |
+| `-b` | Display broadcast wave (BWF) information |
+| `-b<N>` | Display broadcast information with detail level N |
+| `-j <N>` | (Ignored, for compatibility) |
+
+## Examples
+
+### Display basic file information
+
+```bash
+sndinfo myfile.wav
+```
+
+Output:
+```
+myfile.wav:
+    srate 44100, stereo, 16 bit WAV, 3.456 seconds
+    (152438 sample frames)
+```
+
+### Examine multiple files
+
+```bash
+sndinfo *.wav
+```
+
+### Show instrument information
+
+```bash
+sndinfo -i sample.wav
+```
+
+Output includes:
+```
+myfile.wav:
+    srate 44100, mono, 24 bit WAV, 2.500 seconds
+    (110250 sample frames)
+  Gain        : 0
+  Base note   : 60
+  Velocity    : 64 - 127
+  Key         : 0 - 127
+  Loop points : 1
+  0     Mode : fwrd    Start :   1000   End :  50000   Count :      0
+```
+
+### Show broadcast wave information
+
+```bash
+sndinfo -b broadcast.wav
+```
+
+Output includes:
+```
+broadcast.wav:
+    srate 48000, stereo, 24 bit WAV, 60.000 seconds
+    (2880000 sample frames)
+Description      : News segment recorded 2024-01-15
+Originator       : Studio A
+Origination ref  : REF123456
+Origination date : 2024-01-15
+Origination time : 14:30:00
+BWF version      : 1
+```
+
+## Information displayed
+
+### Basic information (always shown)
+
+- **Sample rate**: Samples per second (e.g., 44100, 48000)
+- **Channel configuration**: Mono, stereo, quad, hex, oct, or N-channel
+- **Bit depth**: 8, 16, 24, or 32 bits per sample
+- **File format**: WAV, AIFF, FLAC, etc.
+- **Duration**: Length in seconds
+- **Sample frames**: Total number of sample frames
+
+### Instrument information (`-i` flag)
+
+For sampler-compatible files:
+
+- **Gain**: Overall gain adjustment
+- **Base note**: MIDI note number (middle C = 60)
+- **Velocity range**: Minimum to maximum velocity values
+- **Key range**: MIDI key range for sample mapping
+- **Loop points**: Number of defined loops
+- **Loop details**: For each loop:
+  - Mode: none, forward, backward, or alternating
+  - Start point: Sample frame number
+  - End point: Sample frame number  
+  - Count: Number of times to repeat
+
+### Broadcast wave information (`-b` flag)
+
+For BWF (Broadcast Wave Format) files:
+
+- **Description**: Content description
+- **Originator**: Creator/recording engineer
+- **Origination reference**: Unique identifier
+- **Origination date**: Recording date (YYYY-MM-DD)
+- **Origination time**: Recording time (HH:MM:SS)
+- **BWF version**: Broadcast Wave Format version
+- **UMID**: Unique Material Identifier
+- **Coding history**: Processing history
+
+## Supported file formats
+
+`sndinfo` supports all formats readable by libsndfile:
+
+### Common formats
+
+- **WAV**: Microsoft Wave (PCM, float, compressed)
+- **AIFF/AIFC**: Apple Audio Interchange File Format
+- **FLAC**: Free Lossless Audio Codec
+- **OGG**: Ogg Vorbis (if libsndfile built with support)
+
+### Professional formats
+
+- **CAF**: Apple Core Audio Format
+- **RF64**: 64-bit extended WAV
+- **W64**: Sony Wave64
+- **BWF**: Broadcast Wave Format
+
+### Legacy formats
+
+- **AU/SND**: Sun/NeXT audio
+- **IRCAM**: IRCAM soundfile
+- **VOC**: Creative Voice
+- **PAF**: Paris Audio File
+- **SVX**: Amiga IFF/SVX
+
+## Channel configurations
+
+| Channels | Description |
+|----------|-------------|
+| 1 | Monaural |
+| 2 | Stereo |
+| 4 | Quad (quadraphonic) |
+| 6 | Hex (5.1 surround) |
+| 8 | Oct (7.1 surround) |
+| N | N-channel |
+
+## Sample formats
+
+| Format | Description |
+|--------|-------------|
+| 8-bit | Unsigned or signed char |
+| 16-bit | Signed short integer (CD quality) |
+| 24-bit | Signed 24-bit integer (high quality) |
+| 32-bit | Signed long integer or float |
+| 64-bit | Double precision float |
+
+## Usage patterns
+
+### Check file before processing
+
+```bash
+sndinfo input.wav
+# Verify format, then process
+scale -F 0.5 input.wav output.wav
+```
+
+### Batch file examination
+
+```bash
+for file in *.wav; do
+  echo "Examining $file"
+  sndinfo "$file"
+  echo "---"
+done
+```
+
+### Verify sample rate
+
+```bash
+sndinfo *.wav | grep srate
+```
+
+### Find files with loops
+
+```bash
+sndinfo -i *.wav | grep "Loop points"
+```
+
+## Error handling
+
+### File not found
+
+```
+myfile.wav:
+    could not find
+```
+
+Check:
+- File path is correct
+- File exists in current directory or SFDIR path
+- File permissions allow reading
+
+### Not a sound file
+
+```
+myfile.dat: Not a sound file
+```
+
+The file is not a recognized audio format.
+
+## Environment variables
+
+- `SFDIR`: Semicolon-separated list of directories to search for sound files
+- `SSDIR`: Additional search directory for sound files
+
+## Related utilities
+
+- [scale](/utilities/scale) - Scale audio files
+- [mixer](/utilities/mixer) - Mix audio files
+- [srconv](/utilities/srconv) - Convert sample rates

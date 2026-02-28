@@ -1,0 +1,392 @@
+---
+title: Function table access
+description: Functions for reading and writing Csound function tables
+---
+
+## Overview
+
+Function tables (f-tables) store arrays of data used by Csound instruments for waveforms, envelopes, lookup tables, and other purposes. The C API provides direct access to table data and metadata.
+
+## Table structure
+
+Each function table consists of:
+- **Table number** - Integer identifier (1-N)
+- **Size** - Number of data points (not including guard point)
+- **Data** - Array of `MYFLT` values
+- **Guard point** - Extra sample at end for interpolation
+- **GEN arguments** - Parameters used to create the table
+
+## csoundTableLength
+
+```c
+int32_t csoundTableLength(CSOUND *csound, int32_t table);
+```
+
+Returns the length of a function table (not including the guard point).
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="table" type="int32_t" required>
+  Table number
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  Table length, or `-1` if the table does not exist
+</ResponseField>
+
+### Example
+
+```c
+int32_t len = csoundTableLength(csound, 1);
+if (len >= 0) {
+    printf("Table 1 has %d samples\n", len);
+} else {
+    printf("Table 1 does not exist\n");
+}
+```
+
+## csoundGetTable
+
+```c
+int32_t csoundGetTable(CSOUND *csound, MYFLT **tablePtr, int32_t tableNum);
+```
+
+Store a pointer to function table data in `*tablePtr` and return the table length.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="tablePtr" type="MYFLT**" required>
+  Address where table pointer will be stored
+</ParamField>
+
+<ParamField path="tableNum" type="int32_t" required>
+  Table number
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  Table length (not including guard point), or `-1` if table doesn't exist
+</ResponseField>
+
+<Warning>
+  This function and the returned pointer are NOT thread-safe. Use `csoundTableCopyOut()` for thread-safe access.
+</Warning>
+
+### Example: Reading table data
+
+```c
+MYFLT *table_data;
+int32_t length = csoundGetTable(csound, &table_data, 1);
+
+if (length > 0) {
+    // Read table values
+    for (int32_t i = 0; i < length; i++) {
+        printf("table[%d] = %f\n", i, table_data[i]);
+    }
+}
+```
+
+### Example: Modifying table data
+
+```c
+MYFLT *table_data;
+int32_t length = csoundGetTable(csound, &table_data, 2);
+
+if (length > 0) {
+    // Generate sine wave
+    for (int32_t i = 0; i < length; i++) {
+        double phase = (double)i / length * 2.0 * M_PI;
+        table_data[i] = sin(phase);
+    }
+    // Don't forget to update guard point
+    table_data[length] = table_data[0];
+}
+```
+
+### Example: Analyzing table contents
+
+```c
+void print_table_stats(CSOUND *csound, int32_t table_num) {
+    MYFLT *table;
+    int32_t len = csoundGetTable(csound, &table, table_num);
+    
+    if (len < 0) {
+        printf("Table %d does not exist\n", table_num);
+        return;
+    }
+    
+    MYFLT min_val = table[0];
+    MYFLT max_val = table[0];
+    MYFLT sum = 0.0;
+    
+    for (int32_t i = 0; i < len; i++) {
+        if (table[i] < min_val) min_val = table[i];
+        if (table[i] > max_val) max_val = table[i];
+        sum += table[i];
+    }
+    
+    printf("Table %d:\n", table_num);
+    printf("  Length: %d\n", len);
+    printf("  Range: [%f, %f]\n", min_val, max_val);
+    printf("  Mean: %f\n", sum / len);
+}
+```
+
+## csoundGetTableArgs
+
+```c
+int32_t csoundGetTableArgs(CSOUND *csound, MYFLT **argsPtr, int32_t tableNum);
+```
+
+Store a pointer to the GEN routine arguments used to create the table.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="argsPtr" type="MYFLT**" required>
+  Address where arguments pointer will be stored
+</ParamField>
+
+<ParamField path="tableNum" type="int32_t" required>
+  Table number
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  Number of arguments, or `-1` if table doesn't exist
+</ResponseField>
+
+<Note>
+  The argument list starts with the GEN number and is followed by its parameters.
+  
+  For example, `f 1 0 1024 10 1 0.5` yields the list `{10.0, 1.0, 0.5}`
+</Note>
+
+<Warning>
+  This function and the returned pointer are NOT thread-safe.
+</Warning>
+
+### Example
+
+```c
+MYFLT *args;
+int32_t num_args = csoundGetTableArgs(csound, &args, 1);
+
+if (num_args > 0) {
+    printf("Table 1 created with GEN%d\n", (int)args[0]);
+    printf("Parameters: ");
+    for (int32_t i = 1; i < num_args; i++) {
+        printf("%f ", args[i]);
+    }
+    printf("\n");
+}
+```
+
+## Thread-safe table functions
+
+## csoundTableCopyOut
+
+```c
+void csoundTableCopyOut(CSOUND *csound, int32_t table, 
+                        MYFLT *ptable, int32_t async);
+```
+
+Copy a function table into the provided array (thread-safe).
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="table" type="int32_t" required>
+  Table number
+</ParamField>
+
+<ParamField path="ptable" type="MYFLT*" required>
+  Destination array (must have space for table length + 1 for guard point)
+</ParamField>
+
+<ParamField path="async" type="int32_t" required>
+  - `0` for synchronous operation
+  - `1` for asynchronous operation
+</ParamField>
+
+### Example: Reading table safely
+
+```c
+int32_t len = csoundTableLength(csound, 1);
+if (len > 0) {
+    MYFLT *buffer = (MYFLT*)malloc((len + 1) * sizeof(MYFLT));
+    csoundTableCopyOut(csound, 1, buffer, 0);
+    
+    // Use buffer...
+    for (int32_t i = 0; i < len; i++) {
+        process_sample(buffer[i]);
+    }
+    
+    free(buffer);
+}
+```
+
+### Example: Async table read
+
+```c
+// From a separate thread
+int32_t len = csoundTableLength(csound, 5);
+MYFLT *snapshot = (MYFLT*)malloc((len + 1) * sizeof(MYFLT));
+
+// Async read won't block audio thread
+csoundTableCopyOut(csound, 5, snapshot, 1);
+
+// Process snapshot later...
+```
+
+## csoundTableCopyIn
+
+```c
+void csoundTableCopyIn(CSOUND *csound, int32_t table,
+                       const MYFLT *ptable, int32_t async);
+```
+
+Copy an array into a function table (thread-safe). The table must already exist.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="table" type="int32_t" required>
+  Table number
+</ParamField>
+
+<ParamField path="ptable" type="const MYFLT*" required>
+  Source array (must contain at least table length + 1 samples including guard point)
+</ParamField>
+
+<ParamField path="async" type="int32_t" required>
+  - `0` for synchronous operation
+  - `1` for asynchronous operation
+</ParamField>
+
+### Example: Writing table data
+
+```c
+int32_t len = csoundTableLength(csound, 1);
+if (len > 0) {
+    MYFLT *data = (MYFLT*)malloc((len + 1) * sizeof(MYFLT));
+    
+    // Generate waveform
+    for (int32_t i = 0; i < len; i++) {
+        double phase = (double)i / len * 2.0 * M_PI;
+        data[i] = sin(phase);
+    }
+    data[len] = data[0]; // Guard point
+    
+    // Copy to Csound table
+    csoundTableCopyIn(csound, 1, data, 0);
+    
+    free(data);
+}
+```
+
+### Example: Real-time waveform update
+
+```c
+void update_wavetable(CSOUND *csound, int32_t table_num, 
+                     float *new_waveform, int32_t size) {
+    int32_t table_len = csoundTableLength(csound, table_num);
+    
+    if (table_len != size) {
+        fprintf(stderr, "Size mismatch: table=%d, data=%d\n", 
+                table_len, size);
+        return;
+    }
+    
+    MYFLT *buffer = (MYFLT*)malloc((size + 1) * sizeof(MYFLT));
+    
+    // Convert and copy
+    for (int32_t i = 0; i < size; i++) {
+        buffer[i] = (MYFLT)new_waveform[i];
+    }
+    buffer[size] = buffer[0]; // Guard point
+    
+    // Update table asynchronously (won't block audio)
+    csoundTableCopyIn(csound, table_num, buffer, 1);
+    
+    free(buffer);
+}
+```
+
+### Example: Morphing between tables
+
+```c
+void morph_tables(CSOUND *csound, int32_t table_out,
+                 int32_t table_a, int32_t table_b, float mix) {
+    int32_t len = csoundTableLength(csound, table_out);
+    
+    MYFLT *data_a = (MYFLT*)malloc((len + 1) * sizeof(MYFLT));
+    MYFLT *data_b = (MYFLT*)malloc((len + 1) * sizeof(MYFLT));
+    MYFLT *result = (MYFLT*)malloc((len + 1) * sizeof(MYFLT));
+    
+    // Read source tables
+    csoundTableCopyOut(csound, table_a, data_a, 0);
+    csoundTableCopyOut(csound, table_b, data_b, 0);
+    
+    // Crossfade
+    for (int32_t i = 0; i <= len; i++) {
+        result[i] = data_a[i] * (1.0 - mix) + data_b[i] * mix;
+    }
+    
+    // Write result
+    csoundTableCopyIn(csound, table_out, result, 0);
+    
+    free(data_a);
+    free(data_b);
+    free(result);
+}
+```
+
+## Usage patterns
+
+### Pattern: Table as circular buffer
+
+```c
+typedef struct {
+    int32_t table_num;
+    int32_t size;
+    int32_t write_pos;
+} CircularBuffer;
+
+void cb_write_sample(CSOUND *csound, CircularBuffer *cb, MYFLT sample) {
+    MYFLT *table;
+    int32_t len = csoundGetTable(csound, &table, cb->table_num);
+    
+    if (len > 0) {
+        table[cb->write_pos] = sample;
+        cb->write_pos = (cb->write_pos + 1) % len;
+    }
+}
+```
+
+### Pattern: Table as lookup table
+
+```c
+MYFLT table_lookup_linear(CSOUND *csound, int32_t table_num, MYFLT index) {
+    MYFLT *table;
+    int32_t len = csoundGetTable(csound, &table, table_num);
+    
+    if (len <= 0) return 0.0;
+    
+    // Wrap index to table size
+    while (index < 0) index += len;
+    while (index >= len) index -= len;
+    
+    // Linear interpolation
+    int32_t i0 = (int32_t)index;
+    int32_t i1 = (i0 + 1) % len;
+    MYFLT frac = index - i0;
+    
+    return table[i0] * (1.0 - frac) + table[i1] * frac;
+}
+```

@@ -1,0 +1,537 @@
+---
+title: Node.js API
+description: API reference for Csound in Node.js environments using WebAssembly
+---
+
+The `@csound/nodejs` package provides Csound for Node.js environments using WebAssembly and WASI.
+
+## Installation
+
+```bash
+npm install @csound/nodejs
+```
+
+## Requirements
+
+- Node.js 14 or higher
+- WASI support (built into Node.js)
+
+## Basic usage
+
+### Importing
+
+```javascript
+import { Csound } from '@csound/nodejs';
+// or
+const { Csound } = await import('@csound/nodejs');
+```
+
+### Initialization
+
+```javascript
+const csound = await Csound({
+  withPlugins: [],
+  useWorker: false
+});
+```
+
+#### Parameters
+
+- `withPlugins` - Array of WebAssembly plugin libraries to load
+- `useWorker` - Use worker threads (experimental). Default: `false`
+
+## Core API
+
+The Node.js API shares most methods with the browser API. See the [Browser API](/api/javascript/browser) documentation for the complete method reference.
+
+### Key differences from browser API
+
+1. **No Web Audio API** - Node.js uses different audio backends
+2. **File system** - Direct access to the local file system (though virtual filesystem is still available)
+3. **Audio output** - Uses the `speaker` package for audio playback
+4. **MIDI** - Uses the `easymidi` package for MIDI I/O
+
+## File system operations
+
+In Node.js, you can work with both the virtual filesystem and the real filesystem.
+
+### Virtual filesystem
+
+```javascript
+// Write to virtual filesystem
+const audioData = new Uint8Array(...);
+await csound.fs.writeFile('sound.wav', audioData);
+
+// Read from virtual filesystem
+const data = await csound.fs.readFile('output.wav');
+```
+
+### Real filesystem
+
+When using file paths, Csound can access the real filesystem:
+
+```javascript
+// Load a CSD file from disk
+await csound.compileCSD('./path/to/file.csd');
+
+// Render to disk
+await csound.setOption('-o output.wav');
+```
+
+## Audio output
+
+The Node.js package uses the `speaker` package for real-time audio output.
+
+```javascript
+import { Csound } from '@csound/nodejs';
+
+const csound = await Csound();
+
+const csd = `
+<CsoundSynthesizer>
+<CsOptions>
+  -odac
+</CsOptions>
+<CsInstruments>
+sr = 44100
+kr = 4410
+ksmps = 10
+nchnls = 2
+0dbfs = 1
+
+instr 1
+  out poscil(0.3, 440)
+endin
+</CsInstruments>
+<CsScore>
+  i 1 0 2
+</CsScore>
+</CsoundSynthesizer>
+`;
+
+await csound.compileCSD(csd, 1);
+await csound.start();
+await csound.perform();
+```
+
+## Offline rendering
+
+Render to a WAV file:
+
+```javascript
+import { Csound } from '@csound/nodejs';
+import fs from 'fs';
+
+const csound = await Csound();
+
+await csound.setOption('-o output.wav');
+
+const csd = `
+<CsoundSynthesizer>
+<CsOptions>
+  -o output.wav
+</CsOptions>
+<CsInstruments>
+sr = 44100
+kr = 4410
+ksmps = 10
+nchnls = 2
+0dbfs = 1
+
+instr 1
+  out poscil(0.3, 440)
+endin
+</CsInstruments>
+<CsScore>
+  i 1 0 5
+</CsScore>
+</CsoundSynthesizer>
+`;
+
+await csound.compileCSD(csd, 1);
+await csound.start();
+await csound.perform();
+
+// Read the rendered file from virtual filesystem
+const wavData = await csound.fs.readFile('output.wav');
+fs.writeFileSync('./output.wav', wavData);
+```
+
+## MIDI support
+
+The Node.js package uses `easymidi` for MIDI I/O.
+
+```javascript
+import { Csound } from '@csound/nodejs';
+import easymidi from 'easymidi';
+
+const csound = await Csound();
+
+// Get MIDI device list
+const devices = await csound.getMIDIDevList();
+console.log('MIDI devices:', devices);
+
+// Send MIDI messages
+await csound.midiMessage(144, 60, 100); // Note on
+await csound.midiMessage(128, 60, 0);   // Note off
+```
+
+## Command-line style usage
+
+You can use Csound in a command-line style:
+
+```javascript
+import { Csound } from '@csound/nodejs';
+
+const csound = await Csound();
+
+// Set options like command-line flags
+await csound.setOption('-odac');
+await csound.setOption('-m0');
+await csound.setOption('-d');
+
+// Compile and run
+await csound.compileCSD('composition.csd');
+await csound.start();
+await csound.perform();
+
+await csound.cleanup();
+await csound.destroy();
+```
+
+## Real-time control
+
+Control Csound in real-time using channels:
+
+```javascript
+import { Csound } from '@csound/nodejs';
+
+const csound = await Csound();
+
+const csd = `
+<CsoundSynthesizer>
+<CsOptions>
+  -odac
+</CsOptions>
+<CsInstruments>
+sr = 44100
+kr = 4410
+ksmps = 10
+nchnls = 2
+0dbfs = 1
+
+chn_k "freq", 3
+chn_k "amp", 3
+
+instr 1
+  kFreq chnget "freq"
+  kAmp chnget "amp"
+  aOut poscil kAmp, kFreq
+  outs aOut, aOut
+endin
+</CsInstruments>
+<CsScore>
+  i 1 0 3600
+</CsScore>
+</CsoundSynthesizer>
+`;
+
+await csound.compileCSD(csd, 1);
+await csound.start();
+
+// Start performance in background
+csound.perform();
+
+// Control frequency and amplitude
+setInterval(async () => {
+  const freq = 200 + Math.random() * 600;
+  const amp = 0.1 + Math.random() * 0.2;
+  
+  await csound.setControlChannel('freq', freq);
+  await csound.setControlChannel('amp', amp);
+  
+  console.log(`Freq: ${freq.toFixed(2)} Hz, Amp: ${amp.toFixed(2)}`);
+}, 500);
+```
+
+## Score events
+
+Send score events dynamically:
+
+```javascript
+import { Csound } from '@csound/nodejs';
+
+const csound = await Csound();
+
+const csd = `
+<CsoundSynthesizer>
+<CsOptions>
+  -odac
+</CsOptions>
+<CsInstruments>
+sr = 44100
+kr = 4410
+ksmps = 10
+nchnls = 2
+0dbfs = 1
+
+instr 1
+  iFreq = p4
+  iAmp = p5
+  aOut poscil iAmp, iFreq
+  aEnv linen aOut, 0.01, p3, 0.1
+  outs aEnv, aEnv
+endin
+</CsInstruments>
+<CsScore>
+</CsScore>
+</CsoundSynthesizer>
+`;
+
+await csound.compileCSD(csd, 1);
+await csound.start();
+csound.perform();
+
+// Send notes
+const notes = [261.63, 293.66, 329.63, 349.23, 392.00, 440.00, 493.88, 523.25];
+
+for (let i = 0; i < notes.length; i++) {
+  await new Promise(resolve => setTimeout(resolve, 500));
+  await csound.inputMessage(`i 1 0 0.5 ${notes[i]} 0.3`);
+}
+```
+
+## Table manipulation
+
+Work with function tables:
+
+```javascript
+import { Csound } from '@csound/nodejs';
+
+const csound = await Csound();
+
+const csd = `
+<CsoundSynthesizer>
+<CsOptions>
+  -odac
+</CsOptions>
+<CsInstruments>
+sr = 44100
+kr = 4410
+ksmps = 10
+nchnls = 2
+0dbfs = 1
+
+giWave ftgen 1, 0, 1024, 10, 1
+
+instr 1
+  aOut poscil 0.3, 440, 1
+  outs aOut, aOut
+endin
+</CsInstruments>
+<CsScore>
+  i 1 0 2
+</CsScore>
+</CsoundSynthesizer>
+`;
+
+await csound.compileCSD(csd, 1);
+await csound.start();
+
+// Get table length
+const length = await csound.tableLength('1');
+console.log('Table length:', length);
+
+// Modify table
+for (let i = 0; i < length; i++) {
+  const value = Math.sin(2 * Math.PI * i / length);
+  await csound.tableSet('1', i.toString(), value.toString());
+}
+
+// Read table
+const tableData = await csound.tableCopyOut('1');
+console.log('Table data:', tableData);
+
+await csound.perform();
+```
+
+## Error handling
+
+```javascript
+import { Csound } from '@csound/nodejs';
+
+try {
+  const csound = await Csound();
+  
+  const result = await csound.compileCSD(csd, 1);
+  if (result !== 0) {
+    console.error('Compilation failed with code:', result);
+    process.exit(1);
+  }
+  
+  await csound.start();
+  await csound.perform();
+  
+  await csound.cleanup();
+  await csound.destroy();
+} catch (error) {
+  console.error('Csound error:', error);
+  process.exit(1);
+}
+```
+
+## Complete example
+
+A complete Node.js application:
+
+```javascript
+import { Csound } from '@csound/nodejs';
+import fs from 'fs';
+
+async function main() {
+  console.log('Initializing Csound...');
+  const csound = await Csound();
+
+  // Load CSD from file
+  const csdContent = fs.readFileSync('./composition.csd', 'utf8');
+  
+  // Compile
+  console.log('Compiling...');
+  const compileResult = await csound.compileCSD(csdContent, 1);
+  if (compileResult !== 0) {
+    console.error('Compilation failed');
+    process.exit(1);
+  }
+
+  // Get instance info
+  const sr = await csound.getSr();
+  const kr = await csound.getKr();
+  const nchnls = await csound.getNchnls();
+  console.log(`Sample rate: ${sr}, Control rate: ${kr}, Channels: ${nchnls}`);
+
+  // Start performance
+  console.log('Starting performance...');
+  await csound.start();
+  
+  // Perform
+  await csound.perform();
+  
+  // Cleanup
+  console.log('Cleaning up...');
+  await csound.cleanup();
+  await csound.destroy();
+  
+  console.log('Done!');
+}
+
+main().catch(console.error);
+```
+
+## Event system
+
+The Node.js API supports the same event system as the browser API:
+
+```javascript
+import { Csound } from '@csound/nodejs';
+
+const csound = await Csound();
+
+csound.on('realtimePerformanceStarted', () => {
+  console.log('Performance started');
+});
+
+csound.on('realtimePerformanceEnded', () => {
+  console.log('Performance ended');
+});
+
+csound.on('message', (msg) => {
+  console.log('Csound:', msg);
+});
+
+csound.on('play', () => {
+  console.log('Playing');
+});
+
+csound.on('stop', () => {
+  console.log('Stopped');
+});
+```
+
+See the [Events](/api/javascript/events) page for complete event documentation.
+
+## Plugins
+
+Load WebAssembly plugins:
+
+```javascript
+import { Csound } from '@csound/nodejs';
+import fs from 'fs';
+
+const pluginData = fs.readFileSync('./plugin.wasm');
+
+const csound = await Csound({
+  withPlugins: [pluginData.buffer]
+});
+```
+
+## Performance tips
+
+1. **Use offline rendering** for non-realtime tasks
+2. **Adjust buffer sizes** using CSOUND_PARAMS for optimal performance
+3. **Use ksmps** appropriately to balance latency and CPU usage
+4. **Minimize channel access** in tight loops
+
+## Common patterns
+
+### Batch processing
+
+```javascript
+import { Csound } from '@csound/nodejs';
+import fs from 'fs';
+import path from 'path';
+
+const csdFiles = fs.readdirSync('./scores').filter(f => f.endsWith('.csd'));
+
+for (const file of csdFiles) {
+  const csound = await Csound();
+  const csd = fs.readFileSync(path.join('./scores', file), 'utf8');
+  
+  await csound.compileCSD(csd, 1);
+  await csound.start();
+  await csound.perform();
+  
+  await csound.cleanup();
+  await csound.destroy();
+  
+  console.log(`Rendered ${file}`);
+}
+```
+
+### Server-side synthesis
+
+```javascript
+import { Csound } from '@csound/nodejs';
+import express from 'express';
+
+const app = express();
+app.use(express.json());
+
+let csound = null;
+
+app.post('/note', async (req, res) => {
+  const { frequency, amplitude, duration } = req.body;
+  
+  if (!csound) {
+    return res.status(500).json({ error: 'Csound not initialized' });
+  }
+  
+  await csound.inputMessage(`i 1 0 ${duration} ${frequency} ${amplitude}`);
+  res.json({ success: true });
+});
+
+app.listen(3000, async () => {
+  csound = await Csound();
+  // ... initialize csound ...
+  console.log('Server running on port 3000');
+});
+```

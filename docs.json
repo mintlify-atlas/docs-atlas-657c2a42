@@ -1,122 +1,201 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "Csound",
+  "theme": "aspen",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#1E40AF",
+    "light": "#60A5FA",
+    "dark": "#1E3A8A"
   },
-  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/csound/csound"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/csound/csound"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Getting Started",
             "pages": [
-              "index",
-              "quickstart",
-              "development"
+              "introduction",
+              "installation",
+              "quickstart"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Core Concepts",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "concepts/architecture",
+              "concepts/audio-engine",
+              "concepts/opcodes",
+              "concepts/instruments"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Building from Source",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "building/requirements",
+              "building/macos",
+              "building/linux",
+              "building/windows",
+              "building/mobile"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Language Bindings",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "bindings/overview",
+              "bindings/c-api",
+              "bindings/cpp",
+              "bindings/python",
+              "bindings/javascript",
+              "bindings/java"
+            ]
+          },
+          {
+            "group": "Platform Support",
+            "pages": [
+              "platforms/overview",
+              "platforms/desktop",
+              "platforms/web-assembly",
+              "platforms/ios",
+              "platforms/android",
+              "platforms/embedded"
+            ]
+          },
+          {
+            "group": "Plugin Development",
+            "pages": [
+              "plugins/overview",
+              "plugins/opcode-framework",
+              "plugins/creating-opcodes",
+              "plugins/examples"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "C API",
             "pages": [
-              "api-reference/introduction"
+              "api/c/overview",
+              "api/c/initialization",
+              "api/c/compilation",
+              "api/c/performance",
+              "api/c/audio-io",
+              "api/c/messaging",
+              "api/c/channels",
+              "api/c/tables",
+              "api/c/utilities"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "C++ API",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api/cpp/overview",
+              "api/cpp/csound-class",
+              "api/cpp/plugin-framework",
+              "api/cpp/performance-thread"
+            ]
+          },
+          {
+            "group": "Python API",
+            "pages": [
+              "api/python/overview",
+              "api/python/ctcsound",
+              "api/python/examples"
+            ]
+          },
+          {
+            "group": "JavaScript API",
+            "pages": [
+              "api/javascript/overview",
+              "api/javascript/browser",
+              "api/javascript/nodejs",
+              "api/javascript/events"
+            ]
+          },
+          {
+            "group": "Core Headers",
+            "pages": [
+              "api/headers/csound",
+              "api/headers/csoundcore",
+              "api/headers/plugin",
+              "api/headers/compiler",
+              "api/headers/audio-io",
+              "api/headers/midi-io"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Guides",
+        "groups": [
+          {
+            "group": "Usage",
+            "pages": [
+              "guides/command-line",
+              "guides/embedding",
+              "guides/realtime-audio",
+              "guides/midi",
+              "guides/file-formats"
+            ]
+          },
+          {
+            "group": "Development",
+            "pages": [
+              "guides/contributing",
+              "guides/build-system",
+              "guides/testing",
+              "guides/ci-cd"
+            ]
+          },
+          {
+            "group": "Migration",
+            "pages": [
+              "guides/migration/v6-to-v7",
+              "guides/migration/api-changes",
+              "guides/migration/deprecations"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Utilities",
+        "groups": [
+          {
+            "group": "Analysis Tools",
+            "pages": [
+              "utilities/overview",
+              "utilities/atsa",
+              "utilities/pvanal",
+              "utilities/lpanal",
+              "utilities/hetro",
+              "utilities/cvanal"
+            ]
+          },
+          {
+            "group": "File Tools",
+            "pages": [
+              "utilities/sndinfo",
+              "utilities/srconv",
+              "utilities/mixer",
+              "utilities/scale"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

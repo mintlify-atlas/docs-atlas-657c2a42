@@ -1,0 +1,135 @@
+---
+title: Introduction to Csound
+description: A powerful sound and music computing system for audio synthesis and signal processing
+---
+
+# Introduction to Csound
+
+Csound is a sound and music computing system that has been at the forefront of audio synthesis and signal processing for over three decades. Originally created by Barry Vercoe at MIT in 1985, Csound continues to evolve as a free, open-source platform for creating innovative audio applications.
+
+<Note>
+  Csound 7.0 is currently in beta development. While the latest 6.x version is stable and production-ready, version 7.0 brings exciting new features and improvements.
+</Note>
+
+## What is Csound?
+
+Csound is a programming language and compiler system for audio synthesis and signal processing. It provides:
+
+- **A rich library of opcodes** for synthesis, effects, and signal processing
+- **Cross-platform support** for macOS, Linux, Windows, iOS, Android, and WebAssembly
+- **Real-time and non-real-time processing** capabilities
+- **Extensive I/O options** including audio, MIDI, OSC, and more
+- **Multiple API interfaces** for embedding in applications
+- **A thriving community** of musicians, researchers, and developers
+
+## Key features
+
+<CardGroup cols={2}>
+  <Card title="Powerful synthesis engine" icon="waveform">
+    Over 1,500 opcodes for sound synthesis, analysis, and processing. From classic techniques to cutting-edge algorithms.
+  </Card>
+  
+  <Card title="Cross-platform compatibility" icon="laptop-mobile">
+    Run Csound on desktop, mobile, embedded systems, and in the browser with WebAssembly support.
+  </Card>
+  
+  <Card title="Real-time performance" icon="bolt">
+    Process audio in real-time with low latency. Perfect for live performances and interactive applications.
+  </Card>
+  
+  <Card title="Open source and free" icon="code">
+    Licensed under LGPL 2.1, Csound is completely free to use, modify, and distribute.
+  </Card>
+  
+  <Card title="Flexible I/O" icon="arrows-left-right">
+    Support for audio files, real-time audio, MIDI, OSC, and custom control interfaces.
+  </Card>
+  
+  <Card title="Extensive APIs" icon="plug">
+    Embed Csound in C/C++, Python, Java, JavaScript, and other languages via comprehensive APIs.
+  </Card>
+</CardGroup>
+
+## Who uses Csound?
+
+Csound is used by:
+
+- **Composers and musicians** creating experimental and contemporary music
+- **Researchers** exploring new synthesis techniques and audio algorithms
+- **Educators** teaching computer music and digital signal processing
+- **Developers** building audio applications and plugins
+- **Sound designers** creating unique sounds and effects
+
+## Architecture overview
+
+Csound uses a two-part architecture:
+
+### Orchestra (CsInstruments)
+
+The orchestra defines the instruments and their behavior. This is where you specify the synthesis algorithms, effects chains, and signal routing.
+
+```csound
+<CsInstruments>
+sr = 44100
+ksmps = 32
+nchnls = 2
+0dbfs = 1
+
+instr 1
+  ; Your instrument code here
+endin
+</CsInstruments>
+```
+
+### Score (CsScore)
+
+The score controls when instruments play and with what parameters. It's like a timeline or sequencer for your composition.
+
+```csound
+<CsScore>
+i 1 0 2 440  ; Instrument 1, start at 0, duration 2, frequency 440Hz
+e
+</CsScore>
+```
+
+## Version information
+
+<Warning>
+  Csound 7.0 is currently in beta. For production use, consider the stable 6.x branch. Note that 6.x has reached end-of-life and no further releases are planned.
+</Warning>
+
+The current development focuses on Csound 7.0, which includes:
+
+- Modern codebase improvements
+- Enhanced performance
+- New opcodes and features
+- Better cross-platform support
+- Improved API consistency
+
+## Community and resources
+
+Join the vibrant Csound community:
+
+- **Official website**: [csound.com](https://csound.com)
+- **Reference manual**: [docs.csound.com](https://docs.csound.com)
+- **API documentation**: [csound.github.io/docs/api](https://csound.github.io/docs/api)
+- **GitHub repository**: [github.com/csound/csound](https://github.com/csound/csound)
+- **Mailing list**: Active community discussions and support
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Install Csound" icon="download" href="/installation">
+    Get Csound running on your platform
+  </Card>
+  
+  <Card title="Quick start guide" icon="rocket" href="/quickstart">
+    Create your first Csound program
+  </Card>
+</CardGroup>
+
+---
+
+<Note>
+  Csound is copyright (c) 1991-2024 The Csound Developers. See the CONTRIBUTORS file for the full list of contributors from around the world.
+</Note>

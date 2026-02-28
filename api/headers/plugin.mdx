@@ -1,0 +1,460 @@
+---
+title: plugin.h
+description: C++ plugin opcode framework for Csound
+---
+
+The `plugin.h` header provides a modern C++ interface for writing Csound plugin opcodes. It wraps the C API with type-safe, object-oriented classes and templates.
+
+## Overview
+
+This header enables plugin development using:
+- Template-based opcode definitions
+- STL-style iterators and containers
+- Type-safe argument handling
+- Automatic memory management
+- Modern C++ features
+
+The framework is known as CPOF (Csound Plugin Opcode Framework).
+
+## Key types and constants
+
+### Thread specification
+
+```cpp
+enum thread { 
+  i = 1,      // Init-time only
+  k = 2,      // K-rate only
+  ik = 3,     // Init and k-rate
+  a = 4,      // A-rate only
+  ia = 5      // Init and a-rate
+};
+```
+
+### Fsig formats
+
+```cpp
+enum fsig_format { 
+  pvs = 0,      // Phase vocoder
+  polar,        // STFT polar
+  complex,      // STFT complex
+  tracks        // Sinusoidal tracks
+};
+```
+
+### Type aliases
+
+```cpp
+const double twopi = TWOPI;
+
+typedef CSOUND_FFT_SETUP *fftp;
+typedef Vector<MYFLT> myfltvec;
+typedef std::complex<float> pvscmplx;
+typedef std::complex<MYFLT> sldcmplx;
+typedef Pvbin<float> pv_bin;
+typedef Pvbin<MYFLT> spv_bin;
+typedef Pvframe<pv_bin> pv_frame;
+typedef Pvframe<spv_bin> spv_frame;
+```
+
+## Core classes
+
+### Csound engine wrapper
+
+```cpp
+class Csound : CSOUND {
+public:
+  // Host data
+  void *host_data();
+  
+  // Messages
+  int32_t init_error(const std::string &s);
+  int32_t perf_error(const std::string &s, OPDS *inst);
+  void warning(const std::string &s);
+  void message(const std::string &s);
+  
+  // System attributes
+  MYFLT _0dbfs();
+  MYFLT _A4();
+  uint32_t nchnls();
+  uint32_t nchnls_i();
+  int64_t current_time_samples();
+  
+  // Type checking
+  bool is_asig(void *arg);
+  
+  // MIDI access
+  int32_t midi_channel(OPDS *p);
+  int32_t midi_note_num(OPDS *p);
+  int32_t midi_note_vel(OPDS *p);
+  MYFLT midi_chn_aftertouch(OPDS *p);
+  MYFLT midi_chn_polytouch(OPDS *p, uint32_t note);
+  MYFLT midi_chn_ctl(OPDS *p, uint32_t ctl);
+  MYFLT midi_chn_pitchbend(OPDS *p);
+  const INSDS *midi_chn_list(OPDS *p);
+  
+  // Memory
+  void *malloc(size_t size);
+  void *calloc(size_t size);
+  void *realloc(void *p, size_t size);
+  char *strdup(char *s);
+  void free(void *p);
+  
+  // FFT
+  fftp fft_setup(uint32_t size, uint32_t direction);
+  std::complex<MYFLT> *rfft(fftp setup, MYFLT *data);
+  std::complex<MYFLT> *fft(fftp setup, std::complex<MYFLT> *data);
+  
+  // Global variables
+  int32_t create_global_variable(const char *name, size_t nbytes);
+  void *query_global_variable(const char* name);
+  int32_t destroy_global_variable(const char* name);
+  
+  // Base access
+  CSOUND *get_csound();
+  void sleep(int32_t ms);
+};
+```
+
+### Audio signal wrapper
+
+```cpp
+class AudioSig {
+public:
+  AudioSig(OPDS *p, MYFLT *s, bool res = false);
+  
+  typedef MYFLT *iterator;
+  typedef const MYFLT *const_iterator;
+  
+  iterator begin();
+  iterator end();
+  const_iterator cbegin() const;
+  const_iterator cend() const;
+  
+  MYFLT &operator[](int32_t n);
+  const MYFLT &operator[](int32_t n) const;
+  
+  uint32_t GetEarly();
+  uint32_t GetOffset();
+  uint32_t GetNsmps();
+};
+```
+
+Handles sample-accurate processing automatically.
+
+### Vector container
+
+```cpp
+template <typename T> class Vector : ARRAYDAT {
+public:
+  void init(Csound *csound, int32_t size, INSDS *ctx);
+  
+  typedef T *iterator;
+  typedef const T *const_iterator;
+  
+  iterator begin();
+  iterator end();
+  const_iterator cbegin() const;
+  const_iterator cend() const;
+  
+  T &operator[](int32_t n);
+  const T &operator[](int32_t n) const;
+  
+  uint32_t len();
+  uint32_t elem_offset();
+  T *data_array();
+};
+```
+
+### Phase vocoder bin
+
+```cpp
+template <typename T> class Pvbin {
+public:
+  Pvbin();
+  
+  T amp();                      // Get amplitude
+  T freq();                     // Get frequency
+  T amp(T a);                   // Set amplitude
+  T freq(T f);                  // Set frequency
+  
+  const Pvbin &operator*=(const Pvbin &bin);
+  Pvbin operator*(const Pvbin &a);
+  const Pvbin &operator*=(MYFLT f);
+  Pvbin operator*(MYFLT f);
+  
+  operator pvscmplx&();
+  operator pvscmplx*();
+};
+```
+
+### Fsig container
+
+```cpp
+class Fsig : protected PVSDAT {
+public:
+  void init(Csound *csound, int32_t n, int32_t h, int32_t w, 
+            int32_t t, int32_t f, int32_t nb = 0, int32_t sl = 0, 
+            uint32_t nsmps = 1);
+  void init(Csound *csound, const Fsig &f, uint32_t nsmps = 1);
+  
+  uint32_t dft_size();
+  uint32_t hop_size();
+  uint32_t win_size();
+  int32_t win_type();
+  uint32_t nbins();
+  uint32_t count() const;
+  uint32_t count(uint32_t cnt);
+  bool isSliding();
+  int32_t fsig_format();
+  float *data();
+  
+  operator pv_frame&();
+#ifdef USE_DOUBLE
+  operator spv_frame&();
+#endif
+};
+```
+
+### PV frame container
+
+```cpp
+template <typename T> class Pvframe : public Fsig {
+public:
+  typedef T *iterator;
+  typedef const T *const_iterator;
+  
+  iterator begin();
+  iterator end();
+  const_iterator cbegin() const;
+  const_iterator cend() const;
+  
+  T &operator[](int32_t n);
+  const T &operator[](int32_t n) const;
+  
+  T *data() const;
+  uint32_t len();
+};
+```
+
+### Function table wrapper
+
+```cpp
+class Table : FUNC {
+public:
+  int32_t init(Csound *csound, MYFLT *arg);
+  
+  typedef MYFLT *iterator;
+  typedef const MYFLT *const_iterator;
+  
+  iterator begin();
+  iterator end();
+  const_iterator cbegin() const;
+  const_iterator cend() const;
+  
+  MYFLT &operator[](int32_t n);
+  const MYFLT &operator[](int32_t n) const;
+  
+  MYFLT *data() const;
+  uint32_t len();
+};
+```
+
+### Auxiliary memory
+
+```cpp
+template <typename T> class AuxMem : AUXCH {
+public:
+  void allocate(Csound *csound, int32_t n);
+  
+  typedef T *iterator;
+  typedef const T *const_iterator;
+  
+  iterator begin();
+  iterator end();
+  const_iterator cbegin() const;
+  const_iterator cend() const;
+  
+  T &operator[](int32_t n);
+  const T &operator[](int32_t n) const;
+  
+  T *data();
+  uint32_t len();
+};
+```
+
+## Plugin templates
+
+### Parameter wrapper
+
+```cpp
+template <std::size_t N> class Param {
+public:
+  MYFLT &operator[](int32_t n);
+  const MYFLT &operator[](int32_t n) const;
+  
+  typedef MYFLT **iterator;
+  iterator begin();
+  iterator end();
+  
+  MYFLT *operator()(int32_t n);
+  MYFLT *data(int32_t n);
+  STRINGDAT &str_data(int32_t n);
+  Fsig &fsig_data(int32_t n);
+  template <typename T> Vector<T> &vector_data(int32_t n);
+  myfltvec &myfltvec_data(int32_t n);
+};
+```
+
+### InPlug base (no outputs)
+
+```cpp
+template <std::size_t N> struct InPlug : OPDS {
+  Param<N> args;                // Arguments
+  Csound *csound;               // Engine
+  uint32_t offset;              // Sample offset
+  uint32_t nsmps;               // Samples to process
+  
+  int32_t init();
+  int32_t deinit();
+  int32_t kperf();
+  int32_t aperf();
+  
+  uint32_t out_count();
+  uint32_t in_count();
+  MYFLT kr();
+  MYFLT ksmps();
+  MYFLT sr();
+  
+  // MIDI access
+  int32_t midi_channel();
+  int32_t midi_note_num();
+  int32_t midi_note_vel();
+  MYFLT midi_chn_aftertouch();
+  MYFLT midi_chn_polytouch(uint32_t note);
+  MYFLT midi_chn_ctl(uint32_t ctl);
+  MYFLT midi_chn_pitchbend();
+  const INSDS *midi_chn_list();
+  
+  bool is_init();
+  bool is_perf();
+};
+```
+
+### Plugin base (with outputs)
+
+```cpp
+template <std::size_t N, std::size_t M> struct Plugin : OPDS {
+  Param<N> outargs;             // Output arguments
+  Param<M> inargs;              // Input arguments
+  Csound *csound;
+  uint32_t offset;
+  uint32_t nsmps;
+  
+  // Same methods as InPlug
+};
+```
+
+### Fsig plugin base
+
+```cpp
+template <std::size_t N, std::size_t M> struct FPlugin : Plugin<N, M> {
+  uint32_t framecount;          // Frame time index
+};
+```
+
+## Registration functions
+
+### Register plugin with explicit types
+
+```cpp
+template <typename T>
+int32_t plugin(Csound *csound, const char *name, 
+               const char *oargs, const char *iargs, 
+               uint32_t thr, uint32_t flags = 0, 
+               int32_t deprec = 0);
+```
+
+### Register with self-defined types
+
+```cpp
+template <typename T>
+int32_t plugin(Csound *csound, const char *name, uint32_t thr,
+               uint32_t flags = 0, int32_t deprec = 0);
+```
+
+Uses `T::otypes` and `T::itypes` static members.
+
+## Thread wrapper
+
+```cpp
+class Thread {
+protected:
+  Csound *csound;
+  virtual uintptr_t run() = 0;
+  
+public:
+  Thread(Csound *cs);
+  uintptr_t join();
+  void *get_thread();
+};
+```
+
+## Utility functions
+
+### Constructor/destructor helpers
+
+```cpp
+template <typename T, typename... Types> 
+T *constr(T *p, Types... args);
+
+template <typename T> 
+void destr(T *p);
+```
+
+## Usage example
+
+```cpp
+#include <plugin.h>
+
+struct MyOscil : csnd::Plugin<1, 2> {
+  csnd::Table ftable;
+  double phase = 0.0;
+  
+  int init() {
+    return ftable.init(csound, inargs[1]) == OK ? OK : NOTOK;
+  }
+  
+  int kperf() {
+    csnd::AudioSig out(this, outargs(0), true);
+    MYFLT amp = *inargs[0];
+    MYFLT freq = *inargs[1];
+    double incr = freq / sr();
+    
+    for (auto &s : out) {
+      s = amp * ftable[(int)(phase * ftable.len())];
+      phase += incr;
+      if (phase >= 1.0) phase -= 1.0;
+    }
+    return OK;
+  }
+};
+
+void csnd::on_load(Csound *csound) {
+  csnd::plugin<MyOscil>(csound, "myoscil", "a", "kk", csnd::thread::ik);
+}
+```
+
+## Namespace
+
+All classes and functions are in the `csnd` namespace:
+
+```cpp
+namespace csnd {
+  // All CPOF types
+}
+```
+
+## See also
+
+- [csoundCore.h](/api/headers/csoundcore) - Internal structures
+- [csdl.h](https://csound.com/docs/api/) - C plugin API

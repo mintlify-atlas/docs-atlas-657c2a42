@@ -1,0 +1,526 @@
+---
+title: Deprecated features
+description: Features and functions that have been removed or deprecated in Csound 7
+---
+
+This page lists all features, functions, and APIs that have been removed or deprecated in Csound 7.
+
+## Removed libraries
+
+### libcsnd
+
+<Warning>
+The separate `libcsnd` library has been completely removed in Csound 7.
+</Warning>
+
+In Csound 6.x, `libcsnd` existed mainly to support wrapping the C API in other languages, plus some rarely used extra functionality. This has been removed to simplify the architecture.
+
+**Migration path:**
+- The C++ `CsoundPerformanceThread` class has been incorporated into the main Csound library
+- A C-language interface for this class is now provided in the public headers
+- Use `csPerfThread.h` (C) or `csPerfThread.hpp` (C++) for performance thread functionality
+
+### csound_threaded.hpp
+
+<Warning>
+The `csound_threaded.hpp` header file has been removed.
+</Warning>
+
+This header duplicated (in a limited way) multithreading that is now built into the Csound library.
+
+**Migration path:**
+- Use `csPerfThread.h` for C interface
+- Use `csPerfThread.hpp` for C++ interface
+
+## Removed API functions
+
+### Version and initialization
+
+#### csoundGetAPIVersion()
+
+```c
+PUBLIC void csoundGetAPIVersion(csound);
+```
+
+<Warning>
+Removed. Use `csoundGetVersion()` for semantic versioning instead.
+</Warning>
+
+#### csoundSetOpcodedir()
+
+```c
+PUBLIC void csoundSetOpcodedir(const char *s);
+```
+
+<Warning>
+Removed. The functionality has been consolidated into `csoundCreate()` as a second parameter.
+</Warning>
+
+**Migration:**
+```c
+// Before (Csound 6)
+csoundSetOpcodedir("/path/to/opcodes");
+CSOUND *csound = csoundCreate(hostData);
+
+// After (Csound 7)
+CSOUND *csound = csoundCreate(hostData, "/path/to/opcodes");
+```
+
+### Compilation functions
+
+#### csoundCompileArgs()
+
+```c
+PUBLIC int csoundCompileArgs(CSOUND *, int argc, const char **argv);
+```
+
+<Warning>
+Removed. This duplicates the functionality of `csoundCompile()`.
+</Warning>
+
+**Migration:**
+Use `csoundCompile()` instead.
+
+#### Async variants
+
+```c
+PUBLIC int csoundCompileOrcAsync(CSOUND *csound, const char *str);
+PUBLIC int csoundCompileTreeAsync(CSOUND *csound, TREE *root);
+```
+
+<Warning>
+Removed. Use the consolidated functions with an `async` parameter instead.
+</Warning>
+
+**Migration:**
+```c
+// Before (Csound 6)
+csoundCompileOrcAsync(csound, orc_code);
+
+// After (Csound 7)
+csoundCompileOrc(csound, orc_code, 1);  // 1 = async
+```
+
+#### CSD compilation functions
+
+```c
+PUBLIC int csoundCompileCsd(CSOUND *csound, const char *csd_filename);
+PUBLIC int csoundCompileCsdText(CSOUND *csound, const char *csd_text);
+```
+
+<Warning>
+Removed. Use `csoundCompileCSD()` (uppercase CSD) with a mode parameter.
+</Warning>
+
+**Migration:**
+```c
+// Before (Csound 6)
+csoundCompileCsd(csound, "file.csd");
+csoundCompileCsdText(csound, csd_string);
+
+// After (Csound 7)
+csoundCompileCSD(csound, "file.csd", 0);    // 0 = filename
+csoundCompileCSD(csound, csd_string, 1);    // 1 = code string
+```
+
+### Performance functions
+
+#### csoundPerform()
+
+```c
+PUBLIC int csoundPerform(CSOUND *);
+```
+
+<Warning>
+Removed. Use `csoundPerformKsmps()` in a loop instead.
+</Warning>
+
+**Migration:**
+```c
+// Before (Csound 6)
+csoundPerform(csound);
+
+// After (Csound 7)
+while (csoundPerformKsmps(csound) == 0) {
+    // Optional: process audio buffers
+}
+```
+
+#### csoundPerformBuffer()
+
+```c
+PUBLIC int csoundPerformBuffer(CSOUND *);
+```
+
+<Warning>
+Removed. Buffer-level processing granularity was never found to be useful.
+</Warning>
+
+#### csoundStop()
+
+```c
+csoundStop(CSOUND *)
+```
+
+<Warning>
+Removed. This was only used to stop processing inside `csoundPerform()`.
+</Warning>
+
+#### csoundCleanup()
+
+```c
+PUBLIC int csoundCleanup(CSOUND *);
+```
+
+<Warning>
+Removed. Use `csoundReset()` or `csoundDestroy()` for cleanup.
+</Warning>
+
+### Parameter functions
+
+#### csoundSetParameters() and csoundGetParameters()
+
+```c
+PUBLIC void csoundSetParameters(CSOUND *, CSOUND_PARAMETERS *p);
+PUBLIC void csoundGetParameters(CSOUND *, CSOUND_PARAMETERS *p);
+```
+
+<Warning>
+Removed. Use `csoundGetParams()` for read-only access and `csoundSetOption()` to modify parameters.
+</Warning>
+
+**Migration:**
+```c
+// Before (Csound 6)
+CSOUND_PARAMETERS params;
+csoundGetParameters(csound, &params);
+params.sample_rate = 48000;
+csoundSetParameters(csound, &params);
+
+// After (Csound 7)
+const OPARMS *params = csoundGetParams(csound);
+csoundSetOption(csound, "-r 48000");
+```
+
+### Audio I/O functions
+
+#### Channel count functions
+
+```c
+PUBLIC uint32_t csoundGetNchnls(CSOUND *);
+PUBLIC uint32_t csoundGetNchnlsInput(CSOUND *csound);
+```
+
+<Warning>
+Removed. Use `csoundGetChannels()` with an `isInput` parameter.
+</Warning>
+
+**Migration:**
+```c
+// Before (Csound 6)
+uint32_t output_channels = csoundGetNchnls(csound);
+uint32_t input_channels = csoundGetNchnlsInput(csound);
+
+// After (Csound 7)
+uint32_t output_channels = csoundGetChannels(csound, 0);
+uint32_t input_channels = csoundGetChannels(csound, 1);
+```
+
+#### I/O configuration functions
+
+```c
+PUBLIC void csoundSetOutput(CSOUND *csound, const char *name,
+                              const char *type, const char *format);
+PUBLIC void csoundGetOutputFormat(CSOUND *csound, char *type, char *format);
+PUBLIC void csoundSetInput(CSOUND *csound, const char *name);
+PUBLIC void csoundSetMIDIInput(CSOUND *csound, const char *name);
+PUBLIC void csoundSetMIDIFileInput(CSOUND *csound, const char *name);
+PUBLIC void csoundSetMIDIOutput(CSOUND *csound, const char *name);
+PUBLIC void csoundSetMIDIFileOutput(CSOUND *csound, const char *name);
+```
+
+<Warning>
+Removed. These functions duplicate functionality provided by Csound options.
+</Warning>
+
+**Migration:**
+Use `csoundSetOption()` with appropriate command-line options:
+```c
+csoundSetOption(csound, "-o output.wav");
+csoundSetOption(csound, "-i input.wav");
+csoundSetOption(csound, "-M 1");  // MIDI input
+```
+
+#### Buffer access functions
+
+```c
+PUBLIC long csoundGetInputBufferSize(CSOUND *);
+PUBLIC long csoundGetOutputBufferSize(CSOUND *);
+PUBLIC MYFLT *csoundGetInputBuffer(CSOUND *);
+PUBLIC MYFLT *csoundGetOutputBuffer(CSOUND *);
+```
+
+<Warning>
+Removed. There is no buffer-level processing in the API anymore. Access is limited to spin and spout buffers.
+</Warning>
+
+#### Spin sample functions
+
+```c
+PUBLIC void csoundAddSpinSample(CSOUND *csound,
+                                  int frame, int channel, MYFLT sample);
+PUBLIC void csoundSetSpinSample(CSOUND *csound,
+                                  int frame, int channel, MYFLT sample);
+```
+
+<Warning>
+Removed. Access spin/spout data directly via pointers.
+</Warning>
+
+**Migration:**
+```c
+// Before (Csound 6)
+csoundSetSpinSample(csound, frame, channel, sample);
+
+// After (Csound 7)
+MYFLT *spin = csoundGetSpin(csound);
+spin[frame * channels + channel] = sample;
+```
+
+#### Host-implemented audio I/O
+
+```c
+PUBLIC void csoundSetHostImplementedAudioIO(CSOUND *, int state, int bufSize);
+```
+
+<Warning>
+Removed. Use `csoundSetHostAudioIO()` instead (no buffer size parameter).
+</Warning>
+
+#### Audio callback registration
+
+```c
+PUBLIC void csoundSetPlayopenCallback(...);
+PUBLIC void csoundSetRtplayCallback(...);
+PUBLIC void csoundSetRecopenCallback(...);
+PUBLIC void csoundSetRtrecordCallback(...);
+PUBLIC void csoundSetRtcloseCallback(...);
+PUBLIC void csoundSetAudioDeviceListCallback(...);
+```
+
+<Warning>
+Removed. Registration of audio modules via the API has been discontinued. Audio modules are now only added using the module API.
+</Warning>
+
+#### RT user data functions
+
+```c
+PUBLIC void **csoundGetRtRecordUserData(CSOUND *);
+PUBLIC void **csoundGetRtPlayUserData(CSOUND *);
+```
+
+<Warning>
+Removed. Audio I/O module registration has been removed from the API.
+</Warning>
+
+### MIDI I/O functions
+
+#### csoundSetHostImplementedMIDIIO()
+
+```c
+PUBLIC void csoundSetHostImplementedMIDIIO(CSOUND *csound, int state);
+```
+
+<Warning>
+Removed. Use `csoundSetHostMIDIIO()` instead (no state parameter).
+</Warning>
+
+### Score and event functions
+
+#### Score input functions
+
+```c
+PUBLIC int csoundReadScore(CSOUND *csound, const char *str);
+PUBLIC void csoundReadScoreAsync(CSOUND *csound, const char *str);
+PUBLIC void csoundInputMessage(CSOUND *, const char *message);
+PUBLIC void csoundInputMessageAsync(CSOUND *, const char *message);
+```
+
+<Warning>
+Removed. Use `csoundEventString()` with an `async` parameter.
+</Warning>
+
+**Migration:**
+```c
+// Before (Csound 6)
+csoundReadScore(csound, "i1 0 1");
+csoundInputMessageAsync(csound, "i1 0 1");
+
+// After (Csound 7)
+csoundEventString(csound, "i1 0 1", 0);  // 0 = sync
+csoundEventString(csound, "i1 0 1", 1);  // 1 = async
+```
+
+#### Score event functions
+
+```c
+PUBLIC int csoundScoreEvent(CSOUND *, char type, const MYFLT *pFields, long numFields);
+PUBLIC void csoundScoreEventAsync(CSOUND *, char type, const MYFLT *pFields, long numFields);
+PUBLIC int csoundScoreEventAbsolute(CSOUND *, char type, const MYFLT *pfields, long numFields, double time_ofs);
+PUBLIC void csoundScoreEventAbsoluteAsync(CSOUND *, char type, const MYFLT *pfields, long numFields, double time_ofs);
+```
+
+<Warning>
+Removed. Use `csoundEvent()` with event type constants and an `async` parameter.
+</Warning>
+
+**Migration:**
+```c
+// Before (Csound 6)
+csoundScoreEvent(csound, 'i', pfields, numFields);
+
+// After (Csound 7)
+csoundEvent(csound, CS_INSTR_EVENT, pfields, numFields, 0);
+```
+
+### Channel functions
+
+#### csoundGetChannelLock()
+
+```c
+PUBLIC int *csoundGetChannelLock(CSOUND *, const char *name);
+```
+
+<Warning>
+Removed. Use `csoundLockChannel()` and `csoundUnlockChannel()` instead.
+</Warning>
+
+**Migration:**
+```c
+// Before (Csound 6)
+int *lock = csoundGetChannelLock(csound, "myChannel");
+// Manual locking with spinlock
+
+// After (Csound 7)
+csoundLockChannel(csound, "myChannel");
+// Access channel data
+csoundUnlockChannel(csound, "myChannel");
+```
+
+### Table functions
+
+#### Table access functions
+
+```c
+PUBLIC MYFLT csoundTableGet(CSOUND *, int table, int index);
+PUBLIC void csoundTableSet(CSOUND *, int table, int index, MYFLT value);
+PUBLIC void csoundTableCopyOut(CSOUND *csound, int table, MYFLT *dest);
+PUBLIC void csoundTableCopyOutAsync(CSOUND *csound, int table, MYFLT *dest);
+PUBLIC void csoundTableCopyIn(CSOUND *csound, int table, MYFLT *src);
+PUBLIC void csoundTableCopyInAsync(CSOUND *csound, int table, MYFLT *src);
+PUBLIC void csoundGetNamedGEN(CSOUND *csound, int num, char *name, int len);
+PUBLIC int csoundIsNamedGEN(CSOUND *csound, int num);
+```
+
+<Warning>
+Removed. These functions duplicated `csoundGetTable()`. Use `csoundGetTable()` to get a pointer and access table data directly.
+</Warning>
+
+**Migration:**
+```c
+// Before (Csound 6)
+MYFLT value = csoundTableGet(csound, table_num, index);
+csoundTableSet(csound, table_num, index, new_value);
+
+// After (Csound 7)
+MYFLT *table_ptr;
+int table_len = csoundGetTable(csound, &table_ptr, table_num);
+if (table_len > 0) {
+    MYFLT value = table_ptr[index];
+    table_ptr[index] = new_value;
+}
+```
+
+### Instance management
+
+#### csoundKillInstance()
+
+```c
+PUBLIC int csoundKillInstance(CSOUND *csound, MYFLT instr,
+                                char *instrName, int mode, int allow_release);
+```
+
+<Warning>
+Removed. Use an event or Csound code to kill instances.
+</Warning>
+
+**Migration:**
+Use `csoundEventString()` or `csoundEvent()` to send a negative note event:
+```c
+csoundEventString(csound, "i-1 0 0", 0);  // Kill all instances of instr 1
+```
+
+### Callback functions
+
+#### csoundRegisterSenseEventCallback()
+
+```c
+PUBLIC int csoundRegisterSenseEventCallback(CSOUND *,
+                                              void (*func)(CSOUND *, void *),
+                                              void *userData);
+```
+
+<Warning>
+Removed. With `csoundPerform()` removed, this callback has lost its purpose.
+</Warning>
+
+#### csoundSetYieldCallback()
+
+```c
+PUBLIC void csoundSetYieldCallback(CSOUND *, int (*yieldCallback_)(CSOUND *));
+```
+
+<Warning>
+Removed. With `csoundPerform()` removed, this callback has lost its purpose.
+</Warning>
+
+### Opcode functions
+
+#### csoundNewOpcodeList() and csoundDisposeOpcodeList()
+
+```c
+PUBLIC int csoundNewOpcodeList(CSOUND *, opcodeListEntry **opcodelist);
+PUBLIC void csoundDisposeOpcodeList(CSOUND *, opcodeListEntry *opcodelist);
+```
+
+<Warning>
+Removed. No direct replacement available.
+</Warning>
+
+### Cscore support
+
+#### csoundInitializeCscore()
+
+```c
+PUBLIC int csoundInitializeCscore(CSOUND *, FILE *insco, FILE *outsco);
+```
+
+<Warning>
+Removed. Support for Cscore in the API has been discontinued.
+</Warning>
+
+## Summary of header file relocations
+
+The following functions have been moved to specialized headers:
+
+| Header file | Functions moved |
+|-------------|----------------|
+| `csound_compiler.h` | `csoundParseOrc()`, `csoundDeleteTree()`, `csoundCompileTree()` |
+| `csound_server.h` | UDP server functions |
+| `csound_files.h` | `csoundSetFileOpenCallback()` |
+| `csound_graph_displays.h` | Graph and display callback functions |
+| `csound_threads.h` | Threading and concurrency functions |
+| `csound_misc.h` | Miscellaneous utility functions |
+| `csound_circular_buffer.h` | Circular buffer functions |
+
+Include the appropriate header files in your code if you're using these functions.

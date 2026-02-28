@@ -1,0 +1,210 @@
+---
+title: Language bindings overview
+description: Overview of Csound language bindings and host APIs
+---
+
+Csound provides comprehensive language bindings that allow you to integrate Csound into applications written in various programming languages. These bindings give you programmatic control over Csound instances, compilation, performance, and audio I/O.
+
+## Available bindings
+
+Csound offers official bindings for multiple languages:
+
+- **[C API](/bindings/c-api)** - The core C API that all other bindings wrap
+- **[C++](/bindings/cpp)** - Object-oriented C++ interface with RAII semantics
+- **[Python](/bindings/python)** - ctcsound Python bindings using ctypes
+- **[JavaScript](/bindings/javascript)** - WebAssembly bindings for browser and Node.js
+- **[Java](/bindings/java)** - JNI-based Java bindings
+
+## Architecture
+
+All language bindings wrap the core C API defined in `csound.h`. The typical architecture is:
+
+```
+┌─────────────────────────────────────┐
+│   Your Application (Any Language)   │
+└─────────────────────────────────────┘
+                 │
+                 ▼
+┌─────────────────────────────────────┐
+│     Language Binding (FFI Layer)    │
+│  (ctypes, SWIG, JNI, WebAssembly)   │
+└─────────────────────────────────────┘
+                 │
+                 ▼
+┌─────────────────────────────────────┐
+│       Csound C API (csound.h)       │
+└─────────────────────────────────────┘
+                 │
+                 ▼
+┌─────────────────────────────────────┐
+│          Csound Engine              │
+└─────────────────────────────────────┘
+```
+
+## Common operations
+
+All bindings support these core operations:
+
+### Instantiation
+
+Creating and destroying Csound instances:
+
+<Tabs>
+  <Tab title="C">
+    ```c
+    CSOUND *csound = csoundCreate(NULL, NULL);
+    // Use csound...
+    csoundDestroy(csound);
+    ```
+  </Tab>
+  <Tab title="C++">
+    ```cpp
+    Csound csound;
+    // Use csound...
+    // Automatic cleanup via destructor
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    from ctcsound import Csound
+    cs = Csound()
+    # Use cs...
+    del cs  # Automatic cleanup
+    ```
+  </Tab>
+  <Tab title="JavaScript">
+    ```javascript
+    const csound = await Csound();
+    // Use csound...
+    await csound.terminateInstance();
+    ```
+  </Tab>
+</Tabs>
+
+### Compilation and performance
+
+Compiling Csound code and running performance:
+
+<Tabs>
+  <Tab title="C">
+    ```c
+    csoundCompileCSD(csound, "myfile.csd", 0, 0);
+    csoundStart(csound);
+    while (csoundPerformKsmps(csound) == 0) {
+        // Process audio buffer
+    }
+    ```
+  </Tab>
+  <Tab title="C++">
+    ```cpp
+    csound.CompileCSD("myfile.csd");
+    csound.Start();
+    while (csound.PerformKsmps() == 0) {
+        // Process audio buffer
+    }
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    cs.compileCSD('myfile.csd')
+    cs.start()
+    while cs.performKsmps() == 0:
+        # Process audio buffer
+        pass
+    ```
+  </Tab>
+  <Tab title="JavaScript">
+    ```javascript
+    await csound.compileCSD('myfile.csd');
+    await csound.start();
+    await csound.perform();
+    ```
+  </Tab>
+</Tabs>
+
+### Channel communication
+
+Sending and receiving values via software channels:
+
+<Tabs>
+  <Tab title="C">
+    ```c
+    csoundSetControlChannel(csound, "volume", 0.8);
+    MYFLT value = csoundGetControlChannel(csound, "output", NULL);
+    ```
+  </Tab>
+  <Tab title="C++">
+    ```cpp
+    csound.SetControlChannel("volume", 0.8);
+    MYFLT value = csound.GetControlChannel("output");
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    cs.setControlChannel('volume', 0.8)
+    value = cs.controlChannel('output')
+    ```
+  </Tab>
+  <Tab title="JavaScript">
+    ```javascript
+    await csound.setControlChannel('volume', 0.8);
+    const value = await csound.getControlChannel('output');
+    ```
+  </Tab>
+</Tabs>
+
+## Return values and error handling
+
+Most Csound API functions return status codes:
+
+- `CSOUND_SUCCESS` (0) - Operation completed successfully
+- `CSOUND_ERROR` (-1) - Unspecified failure
+- `CSOUND_INITIALIZATION` (-2) - Failed during initialization
+- `CSOUND_PERFORMANCE` (-3) - Failed during performance
+- `CSOUND_MEMORY` (-4) - Failed to allocate requested memory
+- `CSOUND_SIGNAL` (-5) - Termination requested by signal
+
+## Thread safety
+
+The Csound API is generally **not thread-safe** except for specific functions documented as thread-safe. When using Csound in multi-threaded applications:
+
+- Use separate Csound instances for different threads
+- Use the circular buffer API for thread-safe audio data exchange
+- Consider using `CsoundPerformanceThread` (C++) for threaded performance
+
+## Performance considerations
+
+### Buffer sizes
+
+Set appropriate buffer sizes for your use case:
+
+```c
+csoundSetOption(csound, "-b512");  // Software buffer
+csoundSetOption(csound, "-B2048"); // Hardware buffer
+```
+
+### Sample rate and ksmps
+
+Configure audio settings before compilation:
+
+```c
+csoundSetOption(csound, "--sample-rate=48000");
+csoundSetOption(csound, "--ksmps=64");
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="C API" icon="code" href="/bindings/c-api">
+    Explore the core C API reference
+  </Card>
+  <Card title="C++ bindings" icon="copyright" href="/bindings/cpp">
+    Learn about the C++ object-oriented interface
+  </Card>
+  <Card title="Python bindings" icon="python" href="/bindings/python">
+    Use Csound from Python with ctcsound
+  </Card>
+  <Card title="JavaScript bindings" icon="js" href="/bindings/javascript">
+    Run Csound in the browser or Node.js
+  </Card>
+</CardGroup>

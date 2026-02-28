@@ -1,0 +1,298 @@
+---
+title: mixer
+description: Audio mixing utility
+---
+
+The `mixer` utility mixes multiple sound files with independent control over start times, amplitudes, and channel routing. It supports time-varying gain curves and flexible output channel mapping.
+
+## Syntax
+
+```bash
+mixer [-flags] soundfile [-flags] soundfile ...
+```
+
+Flags apply to the next soundfile in the command line.
+
+## Global output options
+
+| Option | Description |
+|--------|-------------|
+| `-o <filename>` | Output sound filename (default: test) |
+| `-A` | Create AIFF format output |
+| `-W` | Create WAV format output |
+| `-h` | No header (raw output) |
+
+## Output sample format
+
+| Option | Description |
+|--------|-------------|
+| `-c` | 8-bit signed char |
+| `-8` | 8-bit unsigned char |
+| `-a` | A-law encoded |
+| `-u` | μ-law encoded |
+| `-s` | 16-bit short int (default) |
+| `-l` | 32-bit long int |
+| `-f` | 32-bit float |
+
+## Per-file mixing options
+
+| Option | Description |
+|--------|-------------|
+| `-S <samples>` | Start sample number for next input file |
+| `-T <seconds>` | Start time in seconds for next input file |
+| `-F <factor>` | Amplitude scale factor for next input |
+| `-F <filename>` | Time-varying gain curve file for next input |
+
+## Channel routing
+
+| Option | Description |
+|--------|-------------|
+| `-1` | Include channel 1 of next input |
+| `-2` | Include channel 2 of next input |
+| `-3` | Include channel 3 of next input |
+| `-4` | Include channel 4 of next input |
+| `^ <n> <m>` | Route input channel n to output channel m |
+
+## Additional options
+
+| Option | Description |
+|--------|-------------|
+| `-R` | Continuously rewrite header during writing |
+| `-H <n>` | Heartbeat: 1=spinner, 2=dots, 3=numeric |
+| `-N` | Ring bell when complete |
+| `-v` | Verbose mode for debugging |
+| `-- <file>` | Log output to file |
+
+## Examples
+
+### Basic mix of two files
+
+```bash
+mixer -o mix.wav file1.wav file2.wav
+```
+
+### Mix with start times
+
+```bash
+mixer -o output.wav file1.wav -T 2.0 file2.wav -T 5.0 file3.wav
+```
+
+Starts file2 at 2 seconds and file3 at 5 seconds.
+
+### Mix with gain control
+
+```bash
+mixer -o mix.wav -F 0.5 quiet.wav -F 1.5 loud.wav
+```
+
+### Mix with sample-accurate timing
+
+```bash
+mixer -o output.wav file1.wav -S 44100 file2.wav -S 88200 file3.wav
+```
+
+Starts file2 at sample 44100 (1 sec at 44.1kHz) and file3 at sample 88200 (2 sec).
+
+### Time-varying gain curve
+
+```bash
+mixer -o mix.wav -F curve.txt audio.wav
+```
+
+With `curve.txt` containing:
+```
+0 0.0
+1000 1.0
+50000 0.5
+100000 0.0
+```
+
+Format: `sample_number gain_factor`
+
+### Channel routing examples
+
+**Mono to stereo (left channel)**:
+```bash
+mixer -o stereo.wav -^1 1 mono.wav
+```
+
+**Mono to stereo (right channel)**:
+```bash
+mixer -o stereo.wav -^1 2 mono.wav
+```
+
+**Stereo swap**:
+```bash
+mixer -o swapped.wav -^1 2 -^2 1 stereo.wav
+```
+
+**Extract and route specific channels**:
+```bash
+mixer -o out.wav -^2 1 -^4 2 multitrack.wav
+```
+
+Routes input channel 2 to output 1, input channel 4 to output 2.
+
+### Complex multi-file mix
+
+```bash
+mixer -o final.wav \
+  -F 0.8 drums.wav \
+  -T 0.5 -F 0.6 bass.wav \
+  -T 1.0 -F 0.7 guitar.wav \
+  -T 2.0 -F 1.0 -F vocal_curve.txt vocals.wav
+```
+
+## Gain scaling
+
+### Fixed gain
+
+`-F <factor>` multiplies all samples by the factor:
+
+- `0.5` - Reduce by 6 dB
+- `1.0` - No change (default)
+- `2.0` - Increase by 6 dB
+- `0.0` - Silence
+
+### Time-varying gain
+
+`-F <filename>` uses a breakpoint file with format:
+
+```
+sample1 gain1
+sample2 gain2
+...
+```
+
+- Sample numbers are absolute positions in output file
+- Gains are linearly interpolated between breakpoints
+- Use `srate × time` to convert time to samples
+
+**Example**: Fade in over 2 seconds at 44.1kHz:
+```
+0 0.0
+88200 1.0
+```
+
+## Output duration
+
+Output file length is determined by:
+- Latest ending input file
+- Calculated as: `max(start_time + duration)` across all inputs
+
+## Channel configuration
+
+Output channels determined by:
+1. Maximum channel referenced in routing
+2. If no routing specified, uses first input's channel count
+
+Default behavior:
+- Mono inputs → sum to mono output
+- Stereo inputs → sum to stereo output
+- Mixed channel counts → expand to maximum needed
+
+## Clipping and overflow
+
+`mixer` tracks samples exceeding output range:
+
+```
+mixer: 145 samples out of range
+```
+
+To avoid clipping:
+1. Reduce input gains with `-F`
+2. Use float output format (`-f`) for no clipping
+3. Scale result with [scale](/utilities/scale) utility
+
+## Performance
+
+### Memory usage
+
+Memory = `output_samples × output_channels × 4 bytes`
+
+For 60 seconds stereo at 44.1kHz:
+```
+60 × 44100 × 2 × 4 = 21.168 MB
+```
+
+### Processing time
+
+Linear with:
+- Total output duration
+- Number of input files
+- Number of channels
+
+## Gain curve file tips
+
+### Create fade curves
+
+**Fade in** (0 to 1 over 2 seconds):
+```
+0 0.0
+88200 1.0
+```
+
+**Fade out** (1 to 0 from 8 to 10 seconds):
+```
+352800 1.0
+441000 0.0
+```
+
+**Crossfade** between two files:
+- File 1: Fade out starting at overlap point
+- File 2: Fade in starting at overlap point
+
+### Generate curves with scripts
+
+Python script for exponential fade:
+```python
+import math
+srate = 44100
+for i in range(0, srate * 2, 1000):
+    gain = (i / (srate * 2)) ** 2  # Exponential curve
+    print(f"{i} {gain}")
+```
+
+## Common mixing scenarios
+
+### Music production
+
+```bash
+mixer -o song.wav \
+  -F 0.8 drums.wav \
+  -F 0.6 bass.wav \
+  -F 0.7 guitar.wav \
+  -T 8.0 -F 0.9 vocals.wav
+```
+
+### Podcast production
+
+```bash
+mixer -o podcast.wav \
+  -F 0.9 speech.wav \
+  -T 0 -F 0.3 music_bed.wav \
+  -T 120 -F 0.5 interlude.wav
+```
+
+### Sound design
+
+```bash
+mixer -o scene.wav \
+  -F ambience_curve.txt ambience.wav \
+  -T 5.5 -F 2.0 explosion.wav \
+  -T 5.7 -F 1.5 debris.wav \
+  -T 7.0 -F 0.8 aftermath.wav
+```
+
+## Limitations
+
+- Maximum 32 input files
+- All inputs must have same sample rate
+- Channel routing limited to channels 1-4
+- Output clipping not prevented (use float or scale down)
+
+## Related utilities
+
+- [scale](/utilities/scale) - Scale amplitude of result
+- [sndinfo](/utilities/sndinfo) - Check file properties
+- [srconv](/utilities/srconv) - Convert sample rates before mixing

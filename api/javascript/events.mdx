@@ -1,0 +1,558 @@
+---
+title: Event system
+description: Complete reference for Csound's event system and event handlers
+---
+
+Csound uses EventEmitter3 for event-based communication. The event system allows you to respond to performance state changes, receive messages, and handle audio node creation.
+
+## Event types
+
+Csound supports the following event types:
+
+### Performance state events
+
+#### play
+
+Emitted when performance transitions from pause/stop to running state.
+
+```javascript
+csound.on('play', () => {
+  console.log('Performance is now playing');
+});
+```
+
+#### pause
+
+Emitted after a successful `csound.pause()` call.
+
+```javascript
+csound.on('pause', () => {
+  console.log('Performance paused');
+});
+```
+
+#### stop
+
+Emitted after performance ends or after a successful `csound.stop()` call.
+
+```javascript
+csound.on('stop', () => {
+  console.log('Performance stopped');
+});
+```
+
+### Realtime performance events
+
+#### realtimePerformanceStarted
+
+Emitted at the start of realtime performance. Not emitted on resume or during offline rendering.
+
+```javascript
+csound.on('realtimePerformanceStarted', () => {
+  console.log('Realtime performance started');
+  startTimer();
+});
+```
+
+#### realtimePerformancePaused
+
+Emitted only when `csound.pause()` is successfully called during realtime performance.
+
+```javascript
+csound.on('realtimePerformancePaused', () => {
+  console.log('Realtime performance paused');
+  pauseVisualizations();
+});
+```
+
+#### realtimePerformanceResumed
+
+Emitted only when `csound.resume()` is successfully called after a pause.
+
+```javascript
+csound.on('realtimePerformanceResumed', () => {
+  console.log('Realtime performance resumed');
+  resumeVisualizations();
+});
+```
+
+#### realtimePerformanceEnded
+
+Emitted after realtime performance ends or after a successful `csound.stop()` call.
+
+```javascript
+csound.on('realtimePerformanceEnded', () => {
+  console.log('Realtime performance ended');
+  stopTimer();
+  cleanupResources();
+});
+```
+
+### Render events
+
+#### renderStarted
+
+Emitted at the start of offline/non-realtime rendering.
+
+```javascript
+csound.on('renderStarted', () => {
+  console.log('Offline rendering started');
+  showProgressBar();
+});
+```
+
+#### renderEnded
+
+Emitted at the end of offline/non-realtime rendering.
+
+```javascript
+csound.on('renderEnded', () => {
+  console.log('Offline rendering completed');
+  hideProgressBar();
+  downloadRenderedFile();
+});
+```
+
+### Audio node events
+
+#### onAudioNodeCreated
+
+Emitted when an AudioNode is created from the AudioContext or OfflineAudioContext before realtime performance. The event callback receives the AudioNode, which is needed if `autoConnect` is set to `false`.
+
+```javascript
+csound.on('onAudioNodeCreated', (audioNode) => {
+  console.log('Audio node created:', audioNode);
+  
+  // Custom audio graph routing
+  audioNode
+    .connect(reverbNode)
+    .connect(compressorNode)
+    .connect(audioContext.destination);
+});
+```
+
+### Message events
+
+#### message
+
+The main entry point to Csound's messaging system (`-m` flag). A default event listener prints messages to the browser console. This default listener can be removed by the user.
+
+```javascript
+csound.on('message', (msg) => {
+  console.log('Csound message:', msg);
+});
+```
+
+## Event methods
+
+Csound provides standard EventEmitter methods for managing event listeners.
+
+### on()
+
+Adds a listener to the end of the listeners array for the specified event.
+
+```typescript
+on(eventName: PublicEvents, listener: Function): EventEmitter
+```
+
+```javascript
+const playHandler = () => console.log('Playing');
+csound.on('play', playHandler);
+```
+
+### once()
+
+Adds a one-time listener for the specified event. The listener is removed and invoked the next time the event is triggered.
+
+```typescript
+once(eventName: PublicEvents, listener: Function): EventEmitter
+```
+
+```javascript
+csound.once('realtimePerformanceStarted', () => {
+  console.log('First performance started');
+  // This will only fire once
+});
+```
+
+### off()
+
+Removes a listener from the listener array. Alias for `removeListener()`.
+
+```typescript
+off(eventName: PublicEvents, listener: Function): EventEmitter
+```
+
+```javascript
+const handler = () => console.log('Message');
+csound.on('message', handler);
+
+// Later, remove the listener
+csound.off('message', handler);
+```
+
+### addListener()
+
+Alias for `on()`.
+
+```typescript
+addListener(eventName: PublicEvents, listener: Function): EventEmitter
+```
+
+### removeListener()
+
+Removes the specified listener from the listener array for the event.
+
+```typescript
+removeListener(eventName: PublicEvents, listener: Function): EventEmitter
+```
+
+```javascript
+const stopHandler = () => console.log('Stopped');
+csound.addListener('stop', stopHandler);
+csound.removeListener('stop', stopHandler);
+```
+
+### removeAllListeners()
+
+Removes all listeners, or those of the specified event.
+
+```typescript
+removeAllListeners(eventName?: PublicEvents): EventEmitter
+```
+
+```javascript
+// Remove all 'message' listeners
+csound.removeAllListeners('message');
+
+// Remove all listeners for all events
+csound.removeAllListeners();
+```
+
+### eventNames()
+
+Returns an array listing the events for which the emitter has registered listeners.
+
+```typescript
+eventNames(): string[]
+```
+
+```javascript
+const events = csound.eventNames();
+console.log('Active events:', events);
+// ['play', 'stop', 'message']
+```
+
+### listenerCount()
+
+Returns the number of listeners listening to the specified event.
+
+```typescript
+listenerCount(eventName: PublicEvents): number
+```
+
+```javascript
+const count = csound.listenerCount('message');
+console.log(`${count} message listeners registered`);
+```
+
+### listeners()
+
+Returns a copy of the array of listeners for the specified event.
+
+```typescript
+listeners(eventName: PublicEvents): Function[]
+```
+
+```javascript
+const messageListeners = csound.listeners('message');
+console.log(`${messageListeners.length} message handlers`);
+```
+
+## Complete examples
+
+### Basic event handling
+
+```javascript
+import { Csound } from '@csound/browser';
+
+const csound = await Csound();
+
+// Set up event handlers
+csound.on('realtimePerformanceStarted', () => {
+  console.log('Started');
+  document.getElementById('status').textContent = 'Playing';
+});
+
+csound.on('realtimePerformanceEnded', () => {
+  console.log('Ended');
+  document.getElementById('status').textContent = 'Stopped';
+});
+
+csound.on('message', (msg) => {
+  const logElement = document.getElementById('log');
+  logElement.textContent += msg + '\n';
+});
+
+// Compile and perform
+await csound.compileCSD(csd, 1);
+await csound.start();
+await csound.perform();
+```
+
+### Performance monitoring
+
+```javascript
+import { Csound } from '@csound/browser';
+
+const csound = await Csound();
+
+let performanceStartTime;
+let isPaused = false;
+
+csound.on('realtimePerformanceStarted', () => {
+  performanceStartTime = Date.now();
+  console.log('Performance started at', new Date(performanceStartTime));
+});
+
+csound.on('realtimePerformancePaused', () => {
+  isPaused = true;
+  const elapsed = Date.now() - performanceStartTime;
+  console.log(`Paused after ${elapsed}ms`);
+});
+
+csound.on('realtimePerformanceResumed', () => {
+  isPaused = false;
+  console.log('Resumed');
+});
+
+csound.on('realtimePerformanceEnded', () => {
+  const totalTime = Date.now() - performanceStartTime;
+  console.log(`Total performance time: ${totalTime}ms`);
+});
+```
+
+### Custom message filtering
+
+```javascript
+import { Csound } from '@csound/browser';
+
+const csound = await Csound();
+
+// Remove default message handler
+csound.removeAllListeners('message');
+
+// Add custom message handlers
+const errors = [];
+const warnings = [];
+const info = [];
+
+csound.on('message', (msg) => {
+  if (msg.includes('error')) {
+    errors.push(msg);
+    console.error(msg);
+  } else if (msg.includes('warning')) {
+    warnings.push(msg);
+    console.warn(msg);
+  } else {
+    info.push(msg);
+    console.log(msg);
+  }
+});
+
+// Later, check for errors
+if (errors.length > 0) {
+  console.error('Compilation had errors:', errors);
+}
+```
+
+### Audio node routing
+
+```javascript
+import { Csound } from '@csound/browser';
+
+const audioContext = new AudioContext();
+
+// Create audio processing chain
+const gainNode = audioContext.createGain();
+const analyserNode = audioContext.createAnalyser();
+const delayNode = audioContext.createDelay();
+
+gainNode.gain.value = 0.8;
+delayNode.delayTime.value = 0.5;
+
+const csound = await Csound({
+  audioContext,
+  autoConnect: false // We'll connect manually
+});
+
+csound.on('onAudioNodeCreated', (csoundNode) => {
+  console.log('Connecting audio graph');
+  
+  // Create custom signal chain
+  csoundNode
+    .connect(delayNode)
+    .connect(gainNode)
+    .connect(analyserNode);
+  
+  analyserNode.connect(audioContext.destination);
+  
+  // Use analyser for visualizations
+  visualize(analyserNode);
+});
+```
+
+### Render progress tracking
+
+```javascript
+import { Csound } from '@csound/browser';
+
+const renderDuration = 60; // seconds
+const sampleRate = 44100;
+
+const offlineContext = new OfflineAudioContext(
+  2,
+  sampleRate * renderDuration,
+  sampleRate
+);
+
+const csound = await Csound({ audioContext: offlineContext });
+
+let renderStartTime;
+
+csound.on('renderStarted', () => {
+  renderStartTime = Date.now();
+  console.log('Rendering started');
+  document.getElementById('progress').style.display = 'block';
+});
+
+csound.on('renderEnded', async () => {
+  const renderTime = Date.now() - renderStartTime;
+  console.log(`Rendering completed in ${renderTime}ms`);
+  
+  // Get rendered audio
+  const renderedBuffer = offlineContext.renderedBuffer;
+  console.log('Rendered buffer:', renderedBuffer);
+  
+  document.getElementById('progress').style.display = 'none';
+  document.getElementById('download').style.display = 'block';
+});
+
+// Track progress during render (if using manual performKsmps)
+const totalKsmps = Math.ceil(renderDuration * await csound.getKr());
+let currentKsmps = 0;
+
+await csound.compileCSD(csd, 1);
+await csound.start();
+
+while (await csound.performKsmps() === 0) {
+  currentKsmps++;
+  const progress = (currentKsmps / totalKsmps) * 100;
+  document.getElementById('progress').value = progress;
+}
+```
+
+### State machine with events
+
+```javascript
+import { Csound } from '@csound/browser';
+
+class CsoundPlayer {
+  constructor() {
+    this.state = 'stopped';
+    this.csound = null;
+  }
+
+  async init() {
+    this.csound = await Csound();
+    this.setupEventHandlers();
+  }
+
+  setupEventHandlers() {
+    this.csound.on('play', () => {
+      this.state = 'playing';
+      this.onStateChange('playing');
+    });
+
+    this.csound.on('pause', () => {
+      this.state = 'paused';
+      this.onStateChange('paused');
+    });
+
+    this.csound.on('stop', () => {
+      this.state = 'stopped';
+      this.onStateChange('stopped');
+    });
+
+    this.csound.on('message', (msg) => {
+      this.onMessage(msg);
+    });
+  }
+
+  onStateChange(newState) {
+    console.log('State changed to:', newState);
+    // Update UI, notify components, etc.
+  }
+
+  onMessage(msg) {
+    console.log('Csound:', msg);
+  }
+
+  async play() {
+    if (this.state === 'stopped') {
+      await this.csound.start();
+      this.csound.perform();
+    } else if (this.state === 'paused') {
+      await this.csound.resume();
+    }
+  }
+
+  async pause() {
+    if (this.state === 'playing') {
+      await this.csound.pause();
+    }
+  }
+
+  async stop() {
+    if (this.state !== 'stopped') {
+      await this.csound.stop();
+    }
+  }
+}
+
+// Usage
+const player = new CsoundPlayer();
+await player.init();
+
+await player.csound.compileCSD(csd, 1);
+await player.play();
+
+setTimeout(() => player.pause(), 2000);
+setTimeout(() => player.play(), 4000);
+setTimeout(() => player.stop(), 6000);
+```
+
+## Event best practices
+
+1. **Clean up listeners** - Always remove event listeners when components unmount or are destroyed
+2. **Use `once()` for one-time operations** - Prevents memory leaks and unnecessary handler calls
+3. **Handle errors in listeners** - Errors in event handlers can crash your application
+4. **Don't block the event loop** - Keep event handlers fast and asynchronous
+5. **Remove default listeners when needed** - The default 'message' listener may not fit your use case
+
+## TypeScript types
+
+```typescript
+type PublicEvents =
+  | "play"
+  | "pause"
+  | "stop"
+  | "realtimePerformanceStarted"
+  | "realtimePerformancePaused"
+  | "realtimePerformanceResumed"
+  | "realtimePerformanceEnded"
+  | "renderStarted"
+  | "renderEnded"
+  | "onAudioNodeCreated"
+  | "message";
+```

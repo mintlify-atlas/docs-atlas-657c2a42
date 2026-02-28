@@ -1,0 +1,157 @@
+---
+title: Build requirements
+description: Dependencies and tools required to build Csound from source
+---
+
+## Core requirements
+
+The following requirements apply to all platforms:
+
+### CMake
+
+Csound uses the CMake build system. Download and install from [cmake.org](https://cmake.org).
+
+### C compiler toolchain
+
+Csound is mostly written in the C language and requires a complete installation of C development tools:
+
+- **macOS**: Xcode Command Line Tools or full Xcode
+- **Linux**: GCC or Clang (typically via `build-essential` package)
+- **Windows**: Visual Studio 2022 or MinGW-w64
+
+### Flex and Bison
+
+The Csound parser requires Bison and Flex to be installed. Recent versions are recommended:
+
+- Bison 3.8 or later
+- Flex 2.6 or later
+
+<Note>
+  macOS includes older versions of Bison and Flex. You'll need to install newer versions via Homebrew or build from source.
+</Note>
+
+## Optional components
+
+### Git
+
+A distributed version control system to clone and acquire the Csound sources. While you can download the source as a zip from GitHub, having Git installed makes it easier to interact with the Csound source and sync with the latest changes.
+
+### C++ compiler toolchain
+
+A few components are written in C++. For these to be built, a complete installation of C++ development tools is necessary. Most modern systems include C++ compilers alongside C compilers.
+
+### Libsndfile
+
+For soundfile I/O, Csound uses [libsndfile](https://libsndfile.github.io/libsndfile/). For this functionality to be present, this library needs to be installed in the system.
+
+<Note>
+  This requirement can be disabled in the CMake build with the `USE_LIBSNDFILE=0` option.
+</Note>
+
+### Libsamplerate
+
+Libsamplerate (Secret Rabbit Code) is used for high-quality sample rate conversion. When disabled, Csound will use linear interpolation for sample rate conversion.
+
+## Platform-specific dependencies
+
+### macOS
+
+<CodeGroup>
+```bash Homebrew
+brew install bison flex
+brew install libsndfile portaudio libsamplerate liblo portmidi
+brew install jack googletest  # Optional
+```
+
+```bash Minimal (no Homebrew)
+# Build libsndfile from source
+git clone https://github.com/libsndfile/libsndfile
+cd libsndfile
+cmake -B build -DENABLE_EXTERNAL_LIBS=0 -DENABLE_MPEG=0 -DCMAKE_INSTALL_PREFIX=../sndfile_install
+cmake --build build
+cmake --build build --target install
+```
+</CodeGroup>
+
+### Linux (Ubuntu/Debian)
+
+```bash
+sudo apt-get update
+sudo apt-get install cmake libsndfile1-dev libasound2-dev libjack-dev \
+  portaudio19-dev libportmidi-dev libpulse-dev swig liblua5.1-0-dev \
+  default-jdk liblo-dev ladspa-sdk libpng-dev dssi-dev bison flex \
+  libportsmf-dev libeigen3-dev libcunit1-dev gettext libsamplerate0-dev \
+  libpipewire-0.3-dev
+```
+
+### Windows
+
+<CodeGroup>
+```powershell Chocolatey
+choco install -y cmake winflexbison3 innosetup git
+```
+
+```powershell Manual
+# Download and install:
+# - Visual Studio 2022: https://visualstudio.microsoft.com/
+# - CMake: https://cmake.org/download/
+# - Win flex-bison: https://github.com/lexxmark/winflexbison
+# - Git: https://git-scm.com/download/win
+```
+</CodeGroup>
+
+## Useful CMake options
+
+The following options may be useful to configure the build according to the local platform conditions.
+
+### CMAKE_INSTALL_PREFIX
+
+This allows the installation to be placed in a custom location (defaults to `/usr/local`). The option takes the top-level installation directory.
+
+```bash
+cmake -B build -DCMAKE_INSTALL_PREFIX=/custom/path
+```
+
+### USE_LIBSNDFILE
+
+In systems where libsndfile is not present, this option can disable this requirement for the build.
+
+```bash
+cmake -B build -DUSE_LIBSNDFILE=0
+```
+
+### USE_LIBSAMPLERATE
+
+Controls whether libsamplerate (Secret Rabbit Code) is used for high-quality sample rate conversion. When disabled, Csound will use linear interpolation for sample rate conversion. Default is ON.
+
+```bash
+cmake -B build -DUSE_LIBSAMPLERATE=0
+```
+
+### BUILD_PLUGINS
+
+Build all external opcodes as plugin libraries. This option is disabled by default.
+
+```bash
+cmake -B build -DBUILD_PLUGINS=1
+```
+
+### DCUSTOM_CMAKE
+
+With this option you can specify a custom.cmake file containing build options and CMake variables to control the build.
+
+```bash
+cmake -B build -DCUSTOM_CMAKE=./platform/osx/custom-osx.cmake
+```
+
+## Listing all CMake options
+
+A full list of CMake build options can be found by running the following command from the CMake build directory:
+
+```bash
+cmake -LAH
+```
+
+## CI build reference
+
+Steps for building Csound across a large range of target platforms can be found in the [csound_builds.yml](https://github.com/csound/csound/blob/develop/.github/workflows/csound_builds.yml) script, which is part of Csound's CI build system.

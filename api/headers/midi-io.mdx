@@ -1,0 +1,445 @@
+---
+title: csound_rtmidi.h
+description: Real-time MIDI I/O module interface
+---
+
+The `csound_rtmidi.h` header defines the interface for implementing real-time MIDI I/O modules in Csound. It provides callbacks for MIDI backends and host application control.
+
+## Overview
+
+This header is used by:
+- MIDI backend module developers
+- Custom MIDI I/O implementations
+- Host applications providing MIDI routing
+
+It defines the contract between Csound and its MIDI backends (PortMIDI, ALSA MIDI, CoreMIDI, JACK MIDI, etc.).
+
+## API functions
+
+### Host MIDI I/O
+
+```c
+PUBLIC void csoundSetHostMIDIIO(CSOUND *csound);
+```
+
+Call after `csoundCreate()` and before performance to implement MIDI via callbacks. This disables Csound's default MIDI handling.
+
+**Usage:**
+```c
+csound = csoundCreate(NULL, NULL);
+csoundSetHostMIDIIO(csound);
+// Set MIDI callbacks before starting
+csoundSetExternalMidiInOpenCallback(csound, my_midi_in_open);
+csoundSetExternalMidiReadCallback(csound, my_midi_read);
+```
+
+### Set MIDI module
+
+```c
+PUBLIC void csoundSetMIDIModule(CSOUND *csound, const char *module);
+```
+
+Set the current MIDI I/O module by name.
+
+**Parameters:**
+- `module` - Module name (e.g., "portmidi", "alsa", "coremidi", "winmme")
+
+**Usage:**
+```c
+csoundSetMIDIModule(csound, "portmidi");
+```
+
+## MIDI input callbacks
+
+### Open MIDI input
+
+```c
+PUBLIC void csoundSetExternalMidiInOpenCallback(
+  CSOUND *,
+  int32_t (*func)(CSOUND *, void **userData, const char *devName)
+);
+```
+
+Register callback for opening real-time MIDI input.
+
+**Callback parameters:**
+- `csound` - Csound instance
+- `userData` - Pointer to store backend-specific data
+- `devName` - MIDI device name to open
+
+**Callback returns:**
+- 0 on success
+- Non-zero error code on failure
+
+**Example:**
+```c
+static int32_t midi_in_open(CSOUND *csound, void **userData, 
+                            const char *devName) {
+  MyMidiData *data = malloc(sizeof(MyMidiData));
+  *userData = data;
+  
+  // Open MIDI device
+  if (open_midi_device(data, devName) < 0) {
+    free(data);
+    return -1;
+  }
+  
+  return 0;
+}
+
+csoundSetExternalMidiInOpenCallback(csound, midi_in_open);
+```
+
+### Read MIDI input
+
+```c
+PUBLIC void csoundSetExternalMidiReadCallback(
+  CSOUND *,
+  int32_t (*func)(CSOUND *, void *userData, 
+                  unsigned char *buf, int32_t nBytes)
+);
+```
+
+Register callback for reading from real-time MIDI input.
+
+**Callback parameters:**
+- `csound` - Csound instance
+- `userData` - Backend-specific data from open callback
+- `buf` - Buffer to fill with MIDI bytes
+- `nBytes` - Maximum bytes to read
+
+**Callback returns:**
+- Number of bytes read
+- 0 if no data available
+- Negative on error
+
+**Example:**
+```c
+static int32_t midi_read(CSOUND *csound, void *userData,
+                         unsigned char *buf, int32_t nBytes) {
+  MyMidiData *data = (MyMidiData *)userData;
+  return read_midi_bytes(data, buf, nBytes);
+}
+
+csoundSetExternalMidiReadCallback(csound, midi_read);
+```
+
+### Close MIDI input
+
+```c
+PUBLIC void csoundSetExternalMidiInCloseCallback(
+  CSOUND *,
+  int32_t (*func)(CSOUND *, void *userData)
+);
+```
+
+Register callback for closing real-time MIDI input.
+
+**Callback parameters:**
+- `csound` - Csound instance
+- `userData` - Backend-specific data
+
+**Callback returns:**
+- 0 on success
+- Non-zero on error
+
+**Example:**
+```c
+static int32_t midi_in_close(CSOUND *csound, void *userData) {
+  MyMidiData *data = (MyMidiData *)userData;
+  close_midi_device(data);
+  free(data);
+  return 0;
+}
+
+csoundSetExternalMidiInCloseCallback(csound, midi_in_close);
+```
+
+## MIDI output callbacks
+
+### Open MIDI output
+
+```c
+PUBLIC void csoundSetExternalMidiOutOpenCallback(
+  CSOUND *,
+  int32_t (*func)(CSOUND *, void **userData, const char *devName)
+);
+```
+
+Register callback for opening real-time MIDI output.
+
+Same signature as MIDI input open callback.
+
+### Write MIDI output
+
+```c
+PUBLIC void csoundSetExternalMidiWriteCallback(
+  CSOUND *,
+  int32_t (*func)(CSOUND *, void *userData,
+                  const unsigned char *buf, int32_t nBytes)
+);
+```
+
+Register callback for writing to real-time MIDI output.
+
+**Callback parameters:**
+- `csound` - Csound instance
+- `userData` - Backend-specific data
+- `buf` - Buffer containing MIDI bytes to write
+- `nBytes` - Number of bytes to write
+
+**Callback returns:**
+- Number of bytes written
+- Negative on error
+
+**Example:**
+```c
+static int32_t midi_write(CSOUND *csound, void *userData,
+                          const unsigned char *buf, int32_t nBytes) {
+  MyMidiData *data = (MyMidiData *)userData;
+  return write_midi_bytes(data, buf, nBytes);
+}
+
+csoundSetExternalMidiWriteCallback(csound, midi_write);
+```
+
+### Close MIDI output
+
+```c
+PUBLIC void csoundSetExternalMidiOutCloseCallback(
+  CSOUND *,
+  int32_t (*func)(CSOUND *, void *userData)
+);
+```
+
+Register callback for closing real-time MIDI output.
+
+Same signature as MIDI input close callback.
+
+## Error handling callback
+
+```c
+PUBLIC void csoundSetExternalMidiErrorStringCallback(
+  CSOUND *,
+  const char *(*func)(int32_t)
+);
+```
+
+Register callback for converting MIDI error codes to strings.
+
+**Callback parameters:**
+- `errcode` - Error code from MIDI operations
+
+**Callback returns:**
+- Human-readable error message string
+
+**Example:**
+```c
+static const char *midi_error_string(int32_t errcode) {
+  switch (errcode) {
+    case MIDI_ERR_DEVICE_NOT_FOUND:
+      return "MIDI device not found";
+    case MIDI_ERR_PERMISSION:
+      return "Permission denied";
+    default:
+      return "Unknown MIDI error";
+  }
+}
+
+csoundSetExternalMidiErrorStringCallback(csound, midi_error_string);
+```
+
+## Device enumeration callback
+
+```c
+PUBLIC void csoundSetMIDIDeviceListCallback(
+  CSOUND *csound,
+  int32_t (*mididevlist__)(CSOUND *, CS_MIDIDEVICE *list, 
+                           int32_t isOutput)
+);
+```
+
+Register function to obtain list of MIDI devices. Should be set by I/O plugins, not by hosts.
+
+**Callback parameters:**
+- `csound` - Csound instance
+- `list` - Array to fill with device info (NULL to get count)
+- `isOutput` - 1 for output devices, 0 for input devices
+
+**Callback returns:**
+- Number of devices available
+
+**Example:**
+```c
+static int32_t midi_dev_list(CSOUND *csound, CS_MIDIDEVICE *list,
+                             int32_t isOutput) {
+  if (list == NULL) {
+    // Return count
+    return get_midi_device_count(isOutput);
+  }
+  
+  // Fill list array
+  int32_t count = 0;
+  for each device {
+    strncpy(list[count].device_name, name, 128);
+    strncpy(list[count].interface_name, interface, 128);
+    strncpy(list[count].device_id, id, 128);
+    strncpy(list[count].midi_module, "mymodule", 128);
+    list[count].isOutput = isOutput;
+    count++;
+  }
+  
+  return count;
+}
+
+csoundSetMIDIDeviceListCallback(csound, midi_dev_list);
+```
+
+Host applications should call `csoundGetMIDIDevList()` instead.
+
+## MIDI message format
+
+MIDI data is passed as raw bytes following standard MIDI protocol:
+
+### Status bytes
+
+```
+0x80-0x8F: Note Off
+0x90-0x9F: Note On
+0xA0-0xAF: Polyphonic Aftertouch
+0xB0-0xBF: Control Change
+0xC0-0xCF: Program Change
+0xD0-0xDF: Channel Aftertouch
+0xE0-0xEF: Pitch Bend
+0xF0-0xFF: System messages
+```
+
+### Message lengths
+
+Most messages are 2-3 bytes:
+- Note On/Off: 3 bytes (status, note, velocity)
+- Control Change: 3 bytes (status, controller, value)
+- Program Change: 2 bytes (status, program)
+- Pitch Bend: 3 bytes (status, LSB, MSB)
+
+System Exclusive (SysEx) messages can be any length.
+
+## Implementing a MIDI backend
+
+### Complete example
+
+```c
+// Backend-specific data
+typedef struct {
+  void *device_handle;
+  int32_t port_number;
+  // ... other state ...
+} MyMidiBackend;
+
+// Open MIDI input
+static int32_t midi_in_open(CSOUND *csound, void **userData,
+                            const char *devName) {
+  MyMidiBackend *backend = malloc(sizeof(MyMidiBackend));
+  *userData = backend;
+  
+  backend->device_handle = open_midi_input(devName);
+  if (backend->device_handle == NULL) {
+    free(backend);
+    return -1;
+  }
+  
+  return 0;
+}
+
+// Read MIDI data
+static int32_t midi_read(CSOUND *csound, void *userData,
+                         unsigned char *buf, int32_t nBytes) {
+  MyMidiBackend *backend = (MyMidiBackend *)userData;
+  return poll_midi_input(backend->device_handle, buf, nBytes);
+}
+
+// Close MIDI input
+static int32_t midi_in_close(CSOUND *csound, void *userData) {
+  MyMidiBackend *backend = (MyMidiBackend *)userData;
+  close_midi_input(backend->device_handle);
+  free(backend);
+  return 0;
+}
+
+// Module initialization
+PUBLIC int32_t csoundModuleInit(CSOUND *csound) {
+  csoundSetExternalMidiInOpenCallback(csound, midi_in_open);
+  csoundSetExternalMidiReadCallback(csound, midi_read);
+  csoundSetExternalMidiInCloseCallback(csound, midi_in_close);
+  // Set output callbacks similarly
+  return 0;
+}
+```
+
+## Usage by host applications
+
+### Using default MIDI backend
+
+```c
+csound = csoundCreate(NULL, NULL);
+csoundSetOption(csound, "-Ma");   // MIDI input from all devices
+csoundSetOption(csound, "-Q1");   // MIDI output to device 1
+// Csound handles all MIDI I/O automatically
+```
+
+### Custom MIDI I/O
+
+```c
+csound = csoundCreate(NULL, NULL);
+csoundSetHostMIDIIO(csound);
+
+// Set callbacks
+csoundSetExternalMidiInOpenCallback(csound, my_midi_in_open);
+csoundSetExternalMidiReadCallback(csound, my_midi_read);
+csoundSetExternalMidiInCloseCallback(csound, my_midi_in_close);
+
+// Csound will call these during performance
+csoundCompile(csound, argc, argv);
+csoundStart(csound);
+while (csoundPerformKsmps(csound) == 0);
+```
+
+## Timing considerations
+
+MIDI callbacks may be called:
+- At k-rate intervals (control rate)
+- From real-time threads
+- With strict timing requirements
+
+Best practices:
+- Keep callbacks fast and non-blocking
+- Buffer MIDI data if necessary
+- Use lock-free queues for thread safety
+- Timestamp events if latency matters
+
+## Thread safety
+
+MIDI callbacks may be called from:
+- Csound's performance thread
+- Real-time system threads
+- MIDI device driver threads
+
+Ensure thread-safe access to shared data:
+- Use atomic operations
+- Implement lock-free buffers
+- Avoid blocking operations
+- Don't call blocking Csound API from callbacks
+
+## Error handling
+
+Return appropriate error codes:
+- 0 or positive: Success (bytes read/written)
+- Negative: Error occurred
+
+Set error string callback to provide meaningful messages to users.
+
+## See also
+
+- [csound.h](/api/headers/csound) - Main API with MIDI device functions
+- [csound_rtaudio.h](/api/headers/audio-io) - Audio I/O interface
+- [csoundCore.h](/api/headers/csoundcore) - MIDI data structures (MCHNBLK, MEVENT)

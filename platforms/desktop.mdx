@@ -1,0 +1,192 @@
+---
+title: Desktop platforms
+description: Building and running Csound on macOS, Linux, and Windows
+---
+
+Csound supports all major desktop platforms with full audio and MIDI capabilities.
+
+## macOS
+
+### Requirements
+
+- Xcode command line tools
+- CMake
+- Bison 3.8+ (macOS includes older version)
+- libsndfile (optional)
+
+### Build with dependencies installed
+
+If you have libsndfile and other dependencies installed:
+
+```bash
+mkdir build
+cd build
+cmake ..
+make -j 8
+sudo make install
+```
+
+The CsoundLib64 framework is installed in `$HOME/Library/Frameworks`.
+
+### Build without dependencies (vanilla)
+
+Build Csound with minimal dependencies on a clean macOS system:
+
+```bash
+# First build libsndfile
+git clone https://github.com/libsndfile/libsndfile
+cd libsndfile
+cmake -B build -DENABLE_EXTERNAL_LIBS=0 -DENABLE_MPEG=0 \
+  -DCMAKE_INSTALL_PREFIX=../sndfile_install
+cmake --build build
+cmake --build build --target install
+cd ..
+
+# Build Csound
+cmake -B build \
+  -DCMAKE_PREFIX_PATH="$PWD/sndfile_install" \
+  -DCMAKE_INSTALL_PREFIX="$PWD/csound_install" \
+  -DCS_FRAMEWORK_DEST="$PWD/csound_install"
+cmake --build build --config Release
+cmake --build build --target install
+```
+
+This installs Csound in the `csound_install` directory with CoreAudio, CoreMIDI, and statically linked libsndfile.
+
+### Build using Homebrew
+
+Use Homebrew to install all dependencies:
+
+```bash
+brew install --only-dependencies csound
+brew install bison flex jack googletest
+
+cmake -B build -DCUSTOM_CMAKE="./platform/osx/custom-osx.cmake"
+cmake --build build --config Release
+sudo make install
+```
+
+### macOS audio and MIDI backends
+
+- **CoreAudio**: Native macOS audio
+- **CoreMIDI**: Native macOS MIDI
+- **JACK**: Professional audio routing (optional)
+
+## Linux
+
+### Ubuntu/Debian
+
+Install dependencies:
+
+```bash
+sudo apt-get update
+sudo apt-get install cmake libsndfile1-dev libasound2-dev \
+  libjack-dev portaudio19-dev libportmidi-dev libpulse-dev \
+  swig liblua5.1-0-dev default-jdk libfltk1.1-dev \
+  libfluidsynth-dev liblo-dev fluid ladspa-sdk libpng-dev \
+  dssi-dev libstk0-dev libgmm++-dev bison flex libportsmf-dev \
+  libeigen3-dev libcunit1-dev gettext libsamplerate0-dev
+```
+
+Build Csound:
+
+```bash
+mkdir build
+cd build
+cmake ..
+make
+sudo make install
+```
+
+### Linux audio and MIDI backends
+
+- **ALSA**: Linux native audio and MIDI
+- **JACK**: Professional audio routing
+- **PulseAudio**: Consumer audio system
+- **PortAudio**: Cross-platform audio I/O
+- **PortMIDI**: Cross-platform MIDI I/O
+
+## Windows
+
+### Requirements
+
+- Visual Studio 2022 (or later)
+- CMake
+- Chocolatey (for dependencies)
+- Flex and Bison
+- Git (optional)
+- InnoSetup (optional, for installer)
+
+### Install dependencies
+
+Open PowerShell as administrator:
+
+```powershell
+choco install -y cmake winflexbison3 innosetup git
+```
+
+### Clone source
+
+```powershell
+git clone https://github.com/csound/csound.git
+cd csound
+```
+
+### Setup vcpkg
+
+The vcpkg package manager handles dependencies like libsndfile, portaudio, and portmidi:
+
+```powershell
+git submodule init
+git submodule update
+.\vcpkg\bootstrap-vcpkg.bat
+```
+
+### Build Csound
+
+```powershell
+# Without Python
+cmake -B build -S . -DUSE_VCPKG=1 \
+  -DCUSTOM_CMAKE="./platform/windows/Custom-vs.cmake" \
+  -DINSTALL_PYTHON_INTERFACE=OFF
+cmake --build build --config Release
+```
+
+With Python 3 installed, you can remove the `-DINSTALL_PYTHON_INTERFACE=OFF` option.
+
+### Build installer
+
+Set up Visual Studio runtime paths:
+
+```powershell
+$Env:RedistVersion = Get-Content "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\Microsoft.VCRedistVersion.default.txt"
+$Env:VCREDIST_CRT_DIR = "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Redist\MSVC\${Env:RedistVersion}\x64\Microsoft.VC143.CRT"
+$Env:VCREDIST_CXXAMP_DIR = "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Redist\MSVC\${Env:RedistVersion}\x64\Microsoft.VC143.CXXAMP"
+$Env:VCREDIST_OPENMP_DIR = "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Redist\MSVC\${Env:RedistVersion}\x64\Microsoft.VC143.OpenMP"
+
+iscc /o. installer\windows\csound7_x64_github.iss
+```
+
+Note: Adjust the Visual Studio path if using a different version.
+
+### Windows audio and MIDI backends
+
+- **PortAudio**: Cross-platform audio I/O (WASAPI, DirectSound, ASIO)
+- **PortMIDI**: Cross-platform MIDI I/O
+
+## Customizing the build
+
+Create a `Custom.cmake` file for platform-specific options:
+
+```cmake
+# Example custom configuration
+set(USE_DOUBLE OFF)  # Use 32-bit floats
+set(BUILD_PLUGINS ON)  # Build opcodes as plugins
+set(USE_JACK ON)  # Enable JACK support
+```
+
+Use it with:
+
+```bash
+cmake -DCUSTOM_CMAKE=Custom.cmake ..
+```

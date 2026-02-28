@@ -1,0 +1,352 @@
+---
+title: C++ opcode framework
+description: Complete API reference for the Csound Plugin Opcode Framework (CPOF)
+---
+
+The CPOF framework is defined in `include/plugin.h` and provides a comprehensive C++ interface for opcode development.
+
+## Core classes
+
+### Plugin base classes
+
+The framework provides template base classes for different opcode configurations.
+
+#### Plugin (N outputs, M inputs)
+
+For opcodes with N outputs and M inputs (N > 0):
+
+```cpp include/plugin.h
+template <std::size_t N, std::size_t M> 
+struct Plugin : OPDS {
+  Param<N> outargs;  // Output arguments
+  Param<M> inargs;   // Input arguments
+  Csound *csound;    // Csound engine
+  uint32_t offset;   // Sample-accurate offset
+  uint32_t nsmps;    // Vector samples to process
+  
+  int32_t init();    // Init-time function
+  int32_t deinit();  // Cleanup function
+  int32_t kperf();   // K-rate processing
+  int32_t aperf();   // A-rate processing
+};
+```
+
+**Key methods:**
+
+- `out_count()`: Returns number of output arguments (for variable output count)
+- `in_count()`: Returns number of input arguments (for variable input count)
+- `kr()`: Local control rate
+- `ksmps()`: Local ksmps value
+- `sr()`: Sampling rate
+- `is_init()`: Check if opcode runs at init time
+- `is_perf()`: Check if opcode runs at perf time
+
+**MIDI access methods:**
+
+- `midi_channel()`: MIDI channel number
+- `midi_note_num()`: MIDI note number
+- `midi_note_vel()`: MIDI velocity
+- `midi_chn_aftertouch()`: Channel aftertouch
+- `midi_chn_polytouch(note)`: Poly aftertouch for note
+- `midi_chn_ctl(ctl)`: Controller value
+- `midi_chn_pitchbend()`: Pitch bend value
+
+#### InPlug (N inputs)
+
+For opcodes with 0 outputs or multiple/variable outputs:
+
+```cpp include/plugin.h
+template <std::size_t N> 
+struct InPlug : OPDS {
+  Param<N> args;     // Arguments (inputs or mixed)
+  Csound *csound;    // Csound engine
+  uint32_t offset;   // Sample-accurate offset
+  uint32_t nsmps;    // Vector samples to process
+  
+  int32_t init();
+  int32_t deinit();
+  int32_t kperf();
+  int32_t aperf();
+};
+```
+
+Provides the same methods as `Plugin<N, M>`.
+
+#### FPlugin (N outputs, M inputs)
+
+For spectral (fsig) processing opcodes:
+
+```cpp include/plugin.h
+template <std::size_t N, std::size_t M> 
+struct FPlugin : Plugin<N, M> {
+  uint32_t framecount;  // Current frame time index
+};
+```
+
+### Parameter access
+
+The `Param<N>` template provides access to opcode arguments:
+
+```cpp include/plugin.h
+template <std::size_t N> 
+class Param {
+  MYFLT &operator[](int32_t n);              // Access parameter value
+  MYFLT *operator()(int32_t n);              // Get parameter pointer
+  STRINGDAT &str_data(int32_t n);            // Get string data
+  Fsig &fsig_data(int32_t n);                // Get fsig data
+  Vector<T> &vector_data(int32_t n);         // Get array data
+  myfltvec &myfltvec_data(int32_t n);        // Get numeric array
+};
+```
+
+**Example usage:**
+
+```cpp
+struct MyOpcode : csnd::Plugin<1, 3> {
+  int32_t kperf() {
+    // Access scalar values
+    MYFLT val1 = inargs[0];
+    MYFLT val2 = inargs[1];
+    
+    // Access array data
+    csnd::myfltvec &arr = inargs.myfltvec_data(2);
+    
+    // Write to output
+    outargs[0] = val1 + val2;
+    return OK;
+  }
+};
+```
+
+## Container classes
+
+### AudioSig
+
+Wraps an audio signal with sample-accurate offset handling:
+
+```cpp include/plugin.h
+class AudioSig {
+  AudioSig(OPDS *p, MYFLT *s, bool reset = false);
+  
+  iterator begin();              // Vector beginning
+  iterator end();                // Vector end
+  MYFLT &operator[](int32_t n);  // Array access
+  uint32_t GetOffset();          // Sample offset
+  uint32_t GetNsmps();           // Samples to process
+};
+```
+
+**Usage:**
+
+```cpp
+int32_t aperf() {
+  csnd::AudioSig out(this, outargs(0), true);  // true = reset output
+  csnd::AudioSig in(this, inargs(0));
+  
+  // Process using iterators
+  auto in_it = in.begin();
+  for (auto &s : out) {
+    s = *in_it * 0.5;  // Multiply by 0.5
+    ++in_it;
+  }
+  return OK;
+}
+```
+
+### Vector (template)
+
+One-dimensional array container:
+
+```cpp include/plugin.h
+template <typename T> 
+class Vector : ARRAYDAT {
+  void init(Csound *csound, int32_t size, INSDS *ctx);
+  
+  iterator begin();              // Array beginning
+  iterator end();                // Array end
+  T &operator[](int32_t n);      // Array access
+  uint32_t len();                // Array length
+  T *data_array();               // Raw data pointer
+};
+```
+
+### Fsig
+
+Phase vocoder frame data:
+
+```cpp include/plugin.h
+class Fsig : protected PVSDAT {
+  void init(Csound *csound, int32_t n, int32_t h, int32_t w, 
+            int32_t t, int32_t f, int32_t nb = 0, int32_t sl = 0);
+  
+  uint32_t dft_size();     // DFT size
+  uint32_t hop_size();     // Analysis hop size
+  uint32_t win_size();     // Window size
+  int32_t win_type();      // Window type
+  uint32_t nbins();        // Number of bins
+  uint32_t count();        // Frame count
+  bool isSliding();        // Sliding mode check
+  int32_t fsig_format();   // Data format
+  float *data();           // Frame data
+};
+```
+
+### Table
+
+Function table container:
+
+```cpp include/plugin.h
+class Table : FUNC {
+  int32_t init(Csound *csound, MYFLT *arg);
+  
+  iterator begin();              // Table beginning
+  iterator end();                // Table end
+  MYFLT &operator[](int32_t n);  // Array access
+  MYFLT *data() const;           // Table data
+  uint32_t len();                // Table length
+};
+```
+
+### AuxMem (template)
+
+Dynamic memory allocation using Csound's allocator:
+
+```cpp include/plugin.h
+template <typename T> 
+class AuxMem : AUXCH {
+  void allocate(Csound *csound, int32_t n);
+  
+  iterator begin();              // Memory beginning
+  iterator end();                // Memory end
+  T &operator[](int32_t n);      // Array access
+  T *data();                     // Data pointer
+  uint32_t len();                // Length
+};
+```
+
+**Usage:**
+
+```cpp
+struct MyOpcode : csnd::Plugin<1, 1> {
+  csnd::AuxMem<MYFLT> buffer;
+  
+  int32_t init() {
+    buffer.allocate(csound, 1024);  // Allocate 1024 floats
+    return OK;
+  }
+  
+  int32_t kperf() {
+    buffer[0] = inargs[0];  // Store value
+    return OK;
+  }
+};
+```
+
+## Csound engine interface
+
+The `Csound` class provides access to the Csound engine:
+
+```cpp include/plugin.h
+class Csound : CSOUND {
+  // Messages
+  int32_t init_error(const std::string &s);
+  int32_t perf_error(const std::string &s, OPDS *inst);
+  void warning(const std::string &s);
+  void message(const std::string &s);
+  
+  // System parameters
+  MYFLT _0dbfs();                    // Max amp reference
+  MYFLT _A4();                       // A4 reference
+  uint32_t nchnls();                 // Output channels
+  uint32_t nchnls_i();               // Input channels
+  int64_t current_time_samples();    // Time in samples
+  
+  // Memory
+  void *malloc(size_t size);
+  void *calloc(size_t size);
+  void *realloc(void *p, size_t size);
+  void free(void *p);
+  
+  // FFT
+  fftp fft_setup(uint32_t size, uint32_t direction);
+  std::complex<MYFLT> *rfft(fftp setup, MYFLT *data);
+  std::complex<MYFLT> *fft(fftp setup, std::complex<MYFLT> *data);
+  
+  // Global variables
+  int32_t create_global_variable(const char *name, size_t nbytes);
+  void *query_global_variable(const char* name);
+  int32_t destroy_global_variable(const char* name);
+};
+```
+
+## Registration functions
+
+Opcodes are registered using template functions:
+
+```cpp include/plugin.h
+template <typename T>
+int32_t plugin(Csound *csound, const char *name, 
+               const char *oargs, const char *iargs, 
+               uint32_t thr, uint32_t flags = 0,
+               int32_t deprec = 0);
+```
+
+**Parameters:**
+
+- `name`: Opcode name
+- `oargs`: Output argument types (e.g., "k", "a", "k[]", "f")
+- `iargs`: Input argument types (e.g., "ki", "kk", "i[]", "m")
+- `thr`: Thread type (`csnd::thread::i`, `ik`, `k`, `a`, `ia`)
+- `flags`: Optional flags
+- `deprec`: Deprecation flag
+
+**Argument type codes:**
+
+- `i`: i-rate (init-time) scalar
+- `k`: k-rate (control-rate) scalar
+- `a`: a-rate (audio-rate) signal
+- `S`: String
+- `f`: f-sig (spectral data)
+- `[]`: Array (e.g., `k[]`, `i[]`)
+- `m`: Variable arguments
+- `O`: Optional argument
+- `o`: Output argument
+- `p`: p-field
+
+**Example:**
+
+```cpp
+void csnd::on_load(csnd::Csound *csound) {
+  // k-rate opcode: kout opcode kin1, kin2
+  csnd::plugin<MyOpcode>(csound, "myop", "k", "kk", csnd::thread::ik);
+  
+  // a-rate opcode: aout opcode ain, kgain
+  csnd::plugin<MyAudioOp>(csound, "myaudioop", "a", "ak", csnd::thread::ia);
+  
+  // Array opcode: kout[] opcode kin[]
+  csnd::plugin<MyArrayOp>(csound, "myarrayop", "k[]", "k[]", csnd::thread::ik);
+}
+```
+
+## Constants and types
+
+```cpp include/plugin.h
+namespace csnd {
+  const double twopi = TWOPI;
+  
+  // Thread types
+  enum thread { i = 1, k = 2, ik = 3, a = 4, ia = 5 };
+  
+  // Fsig formats
+  enum fsig_format { pvs = 0, polar, complex, tracks };
+  
+  // Type aliases
+  typedef Vector<MYFLT> myfltvec;
+  typedef std::complex<float> pvscmplx;
+  typedef std::complex<MYFLT> sldcmplx;
+  typedef Pvbin<float> pv_bin;
+  typedef Pvbin<MYFLT> spv_bin;
+  typedef Pvframe<pv_bin> pv_frame;
+  typedef Pvframe<spv_bin> spv_frame;
+}
+```

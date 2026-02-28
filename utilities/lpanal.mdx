@@ -1,0 +1,175 @@
+---
+title: lpanal
+description: Linear predictive coding (LPC) analysis utility
+---
+
+The `lpanal` utility performs linear predictive coding (LPC) analysis on sound files. LPC models the vocal tract as an all-pole filter and is particularly effective for analyzing and resynthesizing speech and vocal sounds.
+
+## Syntax
+
+```bash
+lpanal [flags] infilename outfilename
+```
+
+## Arguments
+
+- `infilename` - Input sound file to analyze
+- `outfilename` - Output LPC analysis file
+
+## Options
+
+### File and time selection
+
+| Option | Description | Default |
+|--------|-------------|----------|
+| `-s <srate>` | Input sample rate | From header or 44100 |
+| `-c <chnlreq>` | Channel to analyze | 1 |
+| `-b <begin>` | Start time in seconds | 0.0 |
+| `-d <duration>` | Duration to analyze in seconds | To EOF |
+
+### Analysis parameters
+
+| Option | Description | Default |
+|--------|-------------|----------|
+| `-p <npoles>` | Number of poles for analysis | 34 |
+| `-h <hopsize>` | Hop size between frames in samples | 200 |
+
+### Pitch tracking
+
+| Option | Description | Default |
+|--------|-------------|----------|
+| `-P <mincps>` | Lower limit for pitch search in Hz (0 disables pitch tracking) | 70 |
+| `-Q <maxcps>` | Upper limit for pitch search in Hz | 200 |
+
+### Additional options
+
+| Option | Description |
+|--------|-------------|
+| `-C <string>` | Comment field for LP header |
+| `-v <verblevel>` | Verbosity level (0=none, 1=verbose, 2=debug) |
+| `-g` | Enable graphical display of results |
+| `-a` | Use alternate (pole) file storage format |
+| `-n` | Use Durbin method for linear prediction |
+| `-- <fname>` | Log output to file |
+
+## Examples
+
+### Basic LPC analysis
+
+```bash
+lpanal input.wav output.lpc
+```
+
+### Analysis with custom pole count
+
+```bash
+lpanal -p 50 voice.wav voice.lpc
+```
+
+### Speech analysis with pitch tracking
+
+```bash
+lpanal -p 40 -P 80 -Q 300 speech.wav speech.lpc
+```
+
+### High time resolution analysis
+
+```bash
+lpanal -h 100 -p 30 input.wav output.lpc
+```
+
+### Analysis without pitch tracking
+
+```bash
+lpanal -P 0 input.wav output.lpc
+```
+
+### Analyze specific time segment
+
+```bash
+lpanal -b 2.0 -d 5.0 input.wav output.lpc
+```
+
+### Verbose analysis with comment
+
+```bash
+lpanal -v 1 -C "Male voice analysis" voice.wav voice.lpc
+```
+
+## Output file format
+
+The LPC file contains for each analysis frame:
+
+- **Filter coefficients**: Predictor coefficients modeling the spectral envelope
+- **Gain**: Overall energy/gain for the frame
+- **Pitch**: Fundamental frequency (if pitch tracking enabled)
+- **RMS**: Root mean square amplitude
+
+## Choosing analysis parameters
+
+### Number of poles
+
+The pole count determines the filter order:
+
+- **20-30 poles**: Minimal formant resolution, fast analysis
+- **34 poles (default)**: Good balance for speech, captures 16-17 formants
+- **40-50 poles**: Higher spectral detail, better for singing voice
+- **50+ poles**: Maximum detail but may overfit
+
+Rule of thumb: Use approximately `samplerate / 1000` poles for speech.
+
+### Hop size
+
+Controls time resolution:
+
+- **50-100 samples**: Very fine time detail, more data
+- **200 samples (default)**: Good balance (4.5ms at 44.1kHz)
+- **400-500 samples**: Coarser time resolution, smaller files
+
+Frame size is automatically set to `2 × hopsize`.
+
+### Pitch tracking range
+
+- **Male speech**: 80-250 Hz
+- **Female speech**: 150-400 Hz  
+- **Singing voice**: 60-1000 Hz (or wider)
+- **Musical instruments**: Disable with `-P 0`
+
+## Technical details
+
+### Linear prediction methods
+
+**Autocorrelation method (default)**:
+- Stable, always produces minimum-phase filters
+- Guaranteed to find a solution
+- Standard method used in speech coding
+
+**Durbin method (`-n` flag)**:
+- Alternative recursive algorithm
+- Computationally efficient
+- May give different results for some signals
+
+### Frame analysis
+
+For each frame, lpanal:
+1. Extracts a windowed segment of audio
+2. Computes autocorrelation function
+3. Solves linear prediction equations
+4. Extracts filter coefficients and gain
+5. Optionally performs pitch detection
+
+## Using LPC files in Csound
+
+LPC analysis files can be used with Csound opcodes:
+
+- `lpread` - Read LPC data from analysis file
+- `lpreson` - Resynthesise using LPC filter
+- `lpfreson` - LPC resonator with frequency control
+- `lpslot` - Store LPC data in slots
+- `lpinterp` - Interpolate between LPC frames
+
+## Related utilities
+
+- [atsa](/utilities/atsa) - ATS sinusoidal analysis
+- [pvanal](/utilities/pvanal) - Phase vocoder analysis
+- [hetro](/utilities/hetro) - Heterodyne analysis

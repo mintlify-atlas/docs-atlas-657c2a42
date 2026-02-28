@@ -1,0 +1,376 @@
+---
+title: scale
+description: Audio scaling utility
+---
+
+The `scale` utility scales the amplitude of sound files by constant factors, time-varying curves, or normalizes to a target level. It can also analyze and report the maximum possible scaling without clipping.
+
+## Syntax
+
+```bash
+scale [-flags] soundfile
+```
+
+## Output options
+
+| Option | Description |
+|--------|-------------|
+| `-o <filename>` | Output sound filename (default: test) |
+| `-A` | Create AIFF format output |
+| `-W` | Create WAV format output |
+| `-J` | Create IRCAM format output |
+| `-h` | No header (raw output) |
+
+## Output sample format
+
+| Option | Description |
+|--------|-------------|
+| `-c` | 8-bit signed char |
+| `-a` | A-law encoded |
+| `-u` | μ-law encoded |
+| `-s` | 16-bit short int (default) |
+| `-l` | 32-bit long int |
+| `-f` | 32-bit float |
+
+## Scaling options
+
+Choose one of these methods:
+
+| Option | Description |
+|--------|-------------|
+| `-F <factor>` | Fixed scale factor |
+| `-F <filename>` | Time-varying scale curve file |
+| `-M <maximum>` | Scale to given maximum amplitude |
+| `-P <percent>` | Scale to percentage of full scale |
+
+## Additional options
+
+| Option | Description |
+|--------|-------------|
+| `-R` | Continuously rewrite header during writing |
+| `-H <n>` | Heartbeat: 1=spinner, 2=dots, 3=numeric |
+| `-N` | Ring bell when complete |
+| `-- <file>` | Log output to file |
+
+## Examples
+
+### Fixed amplitude scaling
+
+**Reduce by 6 dB (50%)**:
+```bash
+scale -F 0.5 input.wav -o output.wav
+```
+
+**Double amplitude (+6 dB)**:
+```bash
+scale -F 2.0 input.wav -o output.wav
+```
+
+**Reduce by 20 dB (10%)**:
+```bash
+scale -F 0.1 input.wav -o quiet.wav
+```
+
+### Normalize to maximum level
+
+**Normalize to 100% full scale**:
+```bash
+scale -M 1.0 input.wav -o normalized.wav
+```
+
+**Normalize to -3 dB (0.707 full scale)**:
+```bash
+scale -M 0.707 input.wav -o output.wav
+```
+
+**Normalize to -6 dB (0.5 full scale)**:
+```bash
+scale -M 0.5 input.wav -o output.wav
+```
+
+### Scale to percentage
+
+**Scale to 75% full scale**:
+```bash
+scale -P 75 input.wav -o output.wav
+```
+
+**Scale to 50% (same as -M 0.5)**:
+```bash
+scale -P 50 input.wav -o output.wav
+```
+
+### Find maximum possible scaling
+
+```bash
+scale -F 0.0 input.wav
+```
+
+Output:
+```
+Maximum scaling without clipping: 2.456
+Peak amplitude: 0.407
+```
+
+Use this to determine safe scale factor:
+```bash
+scale -F 2.4 input.wav -o output.wav
+```
+
+### Time-varying amplitude curve
+
+```bash
+scale -F envelope.txt input.wav -o output.wav
+```
+
+With `envelope.txt` containing:
+```
+0 0.0
+44100 1.0
+220500 1.0
+264600 0.0
+```
+
+Format: `sample_number scale_factor`
+
+This creates a fade in (0-1s) and fade out (5-6s) at 44.1kHz.
+
+## Scaling methods
+
+### Fixed factor (`-F`)
+
+- Multiplies all samples by constant value
+- `factor = 0.5` reduces amplitude by 6 dB
+- `factor = 2.0` increases amplitude by 6 dB  
+- Linear scaling: `output = input × factor`
+
+### Maximum amplitude (`-M`)
+
+- Analyzes peak level in input
+- Calculates factor to reach target maximum
+- Formula: `factor = target / current_peak`
+- Preserves relative dynamics
+
+### Percentage (`-P`)
+
+- Similar to `-M` but specified as percentage
+- `-P 100` = full scale (same as `-M 1.0`)
+- `-P 50` = half scale (same as `-M 0.5`)
+- `-P 75` = 75% of full scale (same as `-M 0.75`)
+
+### Time-varying curve (`-F filename`)
+
+- Reads breakpoint file with sample/gain pairs
+- Linear interpolation between breakpoints
+- Allows complex amplitude envelopes
+- Good for fades, dynamics, automation
+
+## Amplitude and decibels
+
+Conversion between linear and dB:
+
+| Factor | dB | Effect |
+|--------|-----|--------|
+| 0.1 | -20 dB | Very quiet |
+| 0.25 | -12 dB | Quiet |
+| 0.5 | -6 dB | Half amplitude |
+| 0.707 | -3 dB | Half power |
+| 1.0 | 0 dB | No change |
+| 1.414 | +3 dB | Double power |
+| 2.0 | +6 dB | Double amplitude |
+| 4.0 | +12 dB | Loud |
+| 10.0 | +20 dB | Very loud |
+
+Formulas:
+- dB to factor: `factor = 10^(dB/20)`
+- Factor to dB: `dB = 20 × log10(factor)`
+
+## Normalization strategies
+
+### Peak normalization
+
+Most common, using `-M` or `-P`:
+
+```bash
+scale -M 1.0 input.wav -o normalized.wav
+```
+
+**Pros**: 
+- Maximizes level without clipping
+- Simple and predictable
+- Preserves dynamics
+
+**Cons**:
+- Peak may be isolated transient
+- Average level may still be low
+- Different perceived loudness across files
+
+### Conservative normalization
+
+Leave headroom for safety:
+
+```bash
+scale -M 0.9 input.wav -o output.wav  # -1 dB
+scale -M 0.8 input.wav -o output.wav  # -2 dB
+scale -M 0.707 input.wav -o output.wav  # -3 dB
+```
+
+Use when:
+- Further processing planned
+- Preventing inter-sample peaks
+- Working with lossy codecs
+
+### Batch normalization
+
+Normalize multiple files to same level:
+
+```bash
+for file in *.wav; do
+  scale -M 0.9 "$file" -o "normalized/$file"
+done
+```
+
+## Creating scale curves
+
+### Manual curve creation
+
+**Linear fade in** (0 to 1 over 2 seconds at 44.1kHz):
+```
+0 0.0
+88200 1.0
+```
+
+**Linear fade out** (1 to 0 over 3 seconds at 48kHz):
+```
+0 1.0
+144000 0.0
+```
+
+**Crossfade shape**:
+```
+0 1.0
+44100 0.0
+```
+
+For second file (inverse):
+```
+0 0.0
+44100 1.0
+```
+
+### Generated curves
+
+Python script for exponential fade:
+
+```python
+import math
+
+srate = 44100
+duration = 2.0
+samples = int(srate * duration)
+
+# Exponential fade out
+for i in range(0, samples, 100):
+    # Exponential decay
+    t = i / samples
+    gain = math.exp(-3 * t)  # -3 gives smooth curve
+    print(f"{i} {gain}")
+```
+
+Python script for S-curve fade:
+
+```python
+import math
+
+srate = 44100
+duration = 1.0
+samples = int(srate * duration)
+
+# S-curve (smooth acceleration/deceleration)
+for i in range(0, samples, 100):
+    t = i / samples
+    # Smoothstep function
+    gain = t * t * (3 - 2 * t)
+    print(f"{i} {gain}")
+```
+
+## Common use cases
+
+### Prepare for mastering
+
+```bash
+scale -M 0.8 mix.wav -o premaster.wav
+```
+
+Leaves 2 dB headroom for mastering processing.
+
+### Match levels across files
+
+Find peak levels:
+```bash
+scale -F 0.0 file1.wav
+scale -F 0.0 file2.wav
+```
+
+Normalize to same target:
+```bash
+scale -M 0.7 file1.wav -o file1_norm.wav
+scale -M 0.7 file2.wav -o file2_norm.wav
+```
+
+### Add fade in/out
+
+Create envelope file `fade.txt`:
+```
+0 0.0
+22050 1.0
+529200 1.0
+551250 0.0
+```
+
+Apply:
+```bash
+scale -F fade.txt input.wav -o faded.wav
+```
+
+### Prevent clipping after mixing
+
+```bash
+# Check level after mixing
+scale -F 0.0 mixed.wav
+# Output: Maximum scaling: 0.83
+# Peak exceeds full scale!
+
+# Scale down
+scale -F 0.8 mixed.wav -o fixed.wav
+```
+
+## Technical notes
+
+### Floating point accuracy
+
+Use float output to avoid quantization:
+
+```bash
+scale -f -F 0.5 input.wav -o output.wav
+```
+
+Benefits:
+- No quantization noise
+- Can exceed ±1.0 range
+- Useful for intermediate processing
+
+### Clipping behavior
+
+Integer formats clip at maximum value:
+- 16-bit: ±32767
+- 24-bit: ±8388607  
+- 32-bit: ±2147483647
+
+Float formats don't clip but may cause problems downstream.
+
+## Related utilities
+
+- [mixer](/utilities/mixer) - Mix files with scaling
+- [sndinfo](/utilities/sndinfo) - Check file properties
+- [srconv](/utilities/srconv) - Sample rate conversion

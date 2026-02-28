@@ -1,0 +1,551 @@
+---
+title: Utility functions
+description: Helper functions and system information utilities
+---
+
+## System information
+
+## csoundGetA4
+
+```c
+MYFLT csoundGetA4(CSOUND *csound);
+```
+
+Returns the A4 frequency reference (concert pitch in Hz).
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ResponseField name="return" type="MYFLT">
+  A4 frequency in Hz (typically 440.0)
+</ResponseField>
+
+### Example
+
+```c
+MYFLT a4 = csoundGetA4(csound);
+printf("Concert pitch: %.1f Hz\n", a4);
+
+// Convert MIDI note to frequency
+int midi_note = 69; // A4
+MYFLT freq = a4 * pow(2.0, (midi_note - 69) / 12.0);
+```
+
+## csoundSystemSr
+
+```c
+MYFLT csoundSystemSr(CSOUND *csound, MYFLT val);
+```
+
+If `val > 0`, sets the internal variable holding the system hardware sample rate. Returns the stored value.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="val" type="MYFLT" required>
+  New system sample rate, or `0` to query current value
+</ParamField>
+
+<ResponseField name="return" type="MYFLT">
+  Current system hardware sample rate
+</ResponseField>
+
+### Example
+
+```c
+// Set system sample rate
+csoundSystemSr(csound, 48000.0);
+
+// Query system sample rate
+MYFLT sys_sr = csoundSystemSr(csound, 0);
+printf("System SR: %.0f Hz\n", sys_sr);
+```
+
+## csoundGetKcounter
+
+```c
+uint64_t csoundGetKcounter(CSOUND *csound);
+```
+
+Returns the current k-cycle count in control frames.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ResponseField name="return" type="uint64_t">
+  Number of control periods processed
+</ResponseField>
+
+### Example
+
+```c
+uint64_t start_k = csoundGetKcounter(csound);
+
+// Perform some k-periods
+for (int i = 0; i < 100; i++) {
+    csoundPerformKsmps(csound);
+}
+
+uint64_t end_k = csoundGetKcounter(csound);
+printf("Processed %llu k-periods\n", end_k - start_k);
+```
+
+## Environment variables
+
+## csoundGetEnv
+
+```c
+const char *csoundGetEnv(CSOUND *csound, const char *name);
+```
+
+Get the value of an environment variable, searching in this order:
+1. Local environment of `csound` (if not NULL)
+2. Variables set with `csoundSetGlobalEnv()`
+3. System environment variables
+
+<ParamField path="csound" type="CSOUND*">
+  The Csound instance, or `NULL` for global search only
+</ParamField>
+
+<ParamField path="name" type="const char*" required>
+  Environment variable name
+</ParamField>
+
+<ResponseField name="return" type="const char*">
+  Variable value, or `NULL` if not set
+</ResponseField>
+
+### Example
+
+```c
+const char *opcodedir = csoundGetEnv(csound, "OPCODE6DIR64");
+if (opcodedir != NULL) {
+    printf("Opcode directory: %s\n", opcodedir);
+}
+
+const char *sfdir = csoundGetEnv(csound, "SFDIR");
+if (sfdir != NULL) {
+    printf("Soundfile directory: %s\n", sfdir);
+}
+```
+
+## csoundSetGlobalEnv
+
+```c
+int32_t csoundSetGlobalEnv(const char *name, const char *value);
+```
+
+Set the global value of an environment variable, or delete it if `value` is `NULL`.
+
+<Warning>
+  It is not safe to call this function while any Csound instances are active.
+</Warning>
+
+<ParamField path="name" type="const char*" required>
+  Environment variable name
+</ParamField>
+
+<ParamField path="value" type="const char*">
+  Variable value, or `NULL` to delete
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  `0` on success, non-zero on error
+</ResponseField>
+
+### Example
+
+```c
+// Before creating any Csound instances
+csoundSetGlobalEnv("SFDIR", "/usr/local/share/samples");
+csoundSetGlobalEnv("SSDIR", "/usr/local/share/samples");
+
+// Now create instances
+CSO UND *csound = csoundCreate(NULL, NULL);
+```
+
+## Module and device information
+
+## csoundGetModule
+
+```c
+int32_t csoundGetModule(CSOUND *csound, int32_t number,
+                        char **name, char **type);
+```
+
+Retrieve a module name and type ("audio" or "midi") given an index. Modules are added to the list as Csound loads them.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="number" type="int32_t" required>
+  Module index (0-based)
+</ParamField>
+
+<ParamField path="name" type="char**" required>
+  Address where module name pointer will be stored
+</ParamField>
+
+<ParamField path="type" type="char**" required>
+  Address where module type pointer will be stored
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  `CSOUND_SUCCESS` on success, `CSOUND_ERROR` if module not found
+</ResponseField>
+
+### Example
+
+```c
+char *name, *type;
+int32_t n = 0;
+
+printf("Loaded modules:\n");
+while (!csoundGetModule(csound, n++, &name, &type)) {
+    printf("  Module %d: %s (%s)\n", n, name, type);
+}
+```
+
+## csoundGetAudioDevList
+
+```c
+int32_t csoundGetAudioDevList(CSOUND *csound, 
+                              CS_AUDIODEVICE *list, int32_t isOutput);
+```
+
+Get a list of available audio devices. Call first with `list=NULL` to get device count, then allocate and call again to fill the list.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="list" type="CS_AUDIODEVICE*">
+  Array to fill, or `NULL` to query count
+</ParamField>
+
+<ParamField path="isOutput" type="int32_t" required>
+  - `1` for output devices
+  - `0` for input devices
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  Number of devices
+</ResponseField>
+
+### Example
+
+```c
+// Get output device count
+int32_t n = csoundGetAudioDevList(csound, NULL, 1);
+
+// Allocate and retrieve device list
+CS_AUDIODEVICE *devs = (CS_AUDIODEVICE*)malloc(n * sizeof(CS_AUDIODEVICE));
+csoundGetAudioDevList(csound, devs, 1);
+
+// Display devices
+for (int32_t i = 0; i < n; i++) {
+    printf("%d: %s (%s) - %d channels\n",
+           i, devs[i].device_id, devs[i].device_name,
+           devs[i].max_nchnls);
+}
+
+free(devs);
+```
+
+## csoundGetMIDIDevList
+
+```c
+int32_t csoundGetMIDIDevList(CSOUND *csound,
+                             CS_MIDIDEVICE *list, int32_t isOutput);
+```
+
+Get a list of available MIDI devices. Usage pattern is similar to `csoundGetAudioDevList()`.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="list" type="CS_MIDIDEVICE*">
+  Array to fill, or `NULL` to query count
+</ParamField>
+
+<ParamField path="isOutput" type="int32_t" required>
+  - `1` for output devices
+  - `0` for input devices
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  Number of devices
+</ResponseField>
+
+### Example
+
+```c
+int32_t n = csoundGetMIDIDevList(csound, NULL, 0);
+CS_MIDIDEVICE *devs = (CS_MIDIDEVICE*)malloc(n * sizeof(CS_MIDIDEVICE));
+csoundGetMIDIDevList(csound, devs, 0);
+
+for (int32_t i = 0; i < n; i++) {
+    printf("%d: %s (%s) [%s]\n",
+           i, devs[i].device_name, 
+           devs[i].interface_name,
+           devs[i].device_id);
+}
+
+free(devs);
+```
+
+## Utilities and plugins
+
+## csoundRunUtility
+
+```c
+int32_t csoundRunUtility(CSOUND *csound, const char *name,
+                         int32_t argc, char **argv);
+```
+
+Run a Csound utility with command line arguments. Should be called after loading utility plugins. Use `csoundReset()` to clean up afterward.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="name" type="const char*" required>
+  Utility name (e.g., "srconv", "hetro", "pvanal")
+</ParamField>
+
+<ParamField path="argc" type="int32_t" required>
+  Number of arguments
+</ParamField>
+
+<ParamField path="argv" type="char**" required>
+  Array of argument strings
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  `0` if utility ran successfully, non-zero on error
+</ResponseField>
+
+### Example
+
+```c
+CSO UND *csound = csoundCreate(NULL, NULL);
+
+char *args[] = {"pvanal", "input.wav", "output.pvx"};
+int result = csoundRunUtility(csound, "pvanal", 3, args);
+
+if (result == 0) {
+    printf("Analysis completed successfully\n");
+}
+
+csoundReset(csound);
+csoundDestroy(csound);
+```
+
+## csoundLoadPlugins
+
+```c
+int32_t csoundLoadPlugins(CSOUND *csound, const char *dir);
+```
+
+Load all plugins from a given directory. Generally called immediately after `csoundCreate()` to make new opcodes/modules available.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="dir" type="const char*" required>
+  Directory path containing plugin files
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  `CSOUND_SUCCESS` on success
+</ResponseField>
+
+### Example
+
+```c
+CSO UND *csound = csoundCreate(NULL, NULL);
+
+// Load custom plugins
+int result = csoundLoadPlugins(csound, "/usr/local/lib/csound/plugins");
+if (result != CSOUND_SUCCESS) {
+    fprintf(stderr, "Failed to load plugins\n");
+}
+
+// Now compile code that uses those opcodes
+csoundCompile(csound, argc, argv);
+```
+
+## Debug functions
+
+## csoundGetDebug
+
+```c
+int32_t csoundGetDebug(CSOUND *csound);
+```
+
+Returns whether Csound is set to print debug messages. Non-zero means enabled.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  Non-zero if debug messages are enabled
+</ResponseField>
+
+## csoundSetDebug
+
+```c
+void csoundSetDebug(CSOUND *csound, int32_t debug);
+```
+
+Set whether Csound prints debug messages from the `DebugMsg()` internal API function.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="debug" type="int32_t" required>
+  Non-zero to enable debug messages, `0` to disable
+</ParamField>
+
+### Example
+
+```c
+// Enable debug output
+csoundSetDebug(csound, 1);
+
+// Check if enabled
+if (csoundGetDebug(csound)) {
+    printf("Debug messages enabled\n");
+}
+```
+
+## Timing utilities
+
+## csoundSleep
+
+```c
+void csoundSleep(size_t milliseconds);
+```
+
+Wait for at least the specified number of milliseconds, yielding the CPU to other threads.
+
+<ParamField path="milliseconds" type="size_t" required>
+  Minimum time to sleep in milliseconds
+</ParamField>
+
+### Example
+
+```c
+// Performance loop with frame rate limiting
+csoundStart(csound);
+
+while (!csoundPerformKsmps(csound)) {
+    // Process audio
+    
+    // Update UI at 60 fps
+    update_ui();
+    
+    // Sleep to maintain frame rate (16.67ms ≈ 60fps)
+    csoundSleep(16);
+}
+```
+
+### Example: Periodic event scheduling
+
+```c
+csoundStart(csound);
+
+for (int i = 0; i < 10; i++) {
+    // Trigger instrument
+    char event[64];
+    snprintf(event, sizeof(event), "i 1 0 1 %d", 220 + i * 55);
+    csoundEventString(csound, event, 1);
+    
+    // Wait 1 second
+    csoundSleep(1000);
+}
+```
+
+## Score manipulation
+
+## csoundScoreSort
+
+```c
+int32_t csoundScoreSort(CSOUND *csound, FILE *inFile, FILE *outFile);
+```
+
+Sort a score file and write the result to another file. Call `csoundReset()` after sorting to clean up.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="inFile" type="FILE*" required>
+  Input score file
+</ParamField>
+
+<ParamField path="outFile" type="FILE*" required>
+  Output file for sorted score
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  `0` on success, non-zero on error
+</ResponseField>
+
+### Example
+
+```c
+CSO UND *csound = csoundCreate(NULL, NULL);
+
+FILE *in = fopen("unsorted.sco", "r");
+FILE *out = fopen("sorted.sco", "w");
+
+if (in && out) {
+    int result = csoundScoreSort(csound, in, out);
+    if (result == 0) {
+        printf("Score sorted successfully\n");
+    }
+    fclose(in);
+    fclose(out);
+}
+
+csoundReset(csound);
+csoundDestroy(csound);
+```
+
+## csoundScoreExtract
+
+```c
+int32_t csoundScoreExtract(CSOUND *csound,
+                           FILE *inFile, FILE *outFile, FILE *extractFile);
+```
+
+Extract sections from a score file controlled by an extract file. Call `csoundReset()` afterward.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="inFile" type="FILE*" required>
+  Input score file
+</ParamField>
+
+<ParamField path="outFile" type="FILE*" required>
+  Output file for extracted score
+</ParamField>
+
+<ParamField path="extractFile" type="FILE*" required>
+  Extract control file
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  `0` on success, non-zero on error
+</ResponseField>

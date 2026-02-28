@@ -1,80 +1,378 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quick start
+description: Create your first Csound program and generate sound in minutes
 ---
 
-## Get started in three steps
+# Quick start
 
-Get your documentation site running locally and make your first customization.
+This guide will help you create and run your first Csound program. In just a few minutes, you'll be generating sound and understanding the basics of Csound's architecture.
 
-### Step 1: Set up your local environment
+<Note>
+  Make sure you have [installed Csound](/installation) before proceeding.
+</Note>
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
+## Your first Csound program
+
+Let's start with a simple "Hello World" example that generates a sine wave tone.
+
+<Steps>
+  <Step title="Create a new file">
+    Create a new file called `hello.csd` with your favorite text editor.
     
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+    <Tip>
+      The `.csd` extension stands for "Csound Document" and contains all the code needed for a Csound program.
+    </Tip>
+  </Step>
 
-### Step 2: Deploy your changes
+  <Step title="Add the basic structure">
+    A Csound program has three main sections:
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    ```csound hello.csd
+    <CsoundSynthesizer>
+    <CsOptions>
+    -o dac
+    </CsOptions>
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+    <CsInstruments>
+    sr = 44100
+    ksmps = 32
+    nchnls = 2
+    0dbfs = 1
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+    instr 1
+      ; Generate a 440 Hz sine wave
+      asig oscil 0.3, 440
+      outs asig, asig
+    endin
+    </CsInstruments>
 
-### Step 3: Go live
+    <CsScore>
+    i 1 0 2
+    e
+    </CsScore>
+    </CsoundSynthesizer>
+    ```
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    Let's break this down:
+
+    **CsOptions**: Command-line options for Csound
+    - `-o dac` outputs audio to your speakers in real-time
+
+    **CsInstruments**: The orchestra defines your instruments
+    - `sr = 44100`: Sample rate (44.1 kHz)
+    - `ksmps = 32`: Control rate (samples per control period)
+    - `nchnls = 2`: Number of output channels (stereo)
+    - `0dbfs = 1`: 0 dB full scale = 1.0 (amplitude reference)
+    - `instr 1`: Defines instrument number 1
+    - `oscil`: Oscillator opcode generating a sine wave
+    - `outs`: Outputs to stereo channels
+
+    **CsScore**: When instruments play and with what parameters
+    - `i 1 0 2`: Play instrument 1, starting at time 0, for duration 2 seconds
+    - `e`: End of score
+  </Step>
+
+  <Step title="Run your program">
+    Execute your Csound program from the terminal:
+
+    ```bash
+    csound hello.csd
+    ```
+
+    You should hear a 440 Hz tone (concert A) playing for 2 seconds!
+  </Step>
+</Steps>
+
+## Understanding Csound architecture
+
+Csound uses a modular architecture with two main components:
+
+<CardGroup cols={2}>
+  <Card title="Orchestra" icon="music">
+    The **orchestra** (CsInstruments) contains your instrument definitions. Think of it as your synthesizer design.
+  </Card>
+  
+  <Card title="Score" icon="list-timeline">
+    The **score** (CsScore) controls when instruments play and what parameters they receive. Think of it as your sequencer.
+  </Card>
+</CardGroup>
+
+### Signal types
+
+Csound uses different variable prefixes to indicate signal types:
+
+- **i-rate** (i-variables): Initialized once at note start
+- **k-rate** (k-variables): Control rate, updated every `ksmps` samples
+- **a-rate** (a-variables): Audio rate, updated every sample
+- **S-rate** (S-variables): String variables
+
+## A more interesting example
+
+Let's create a simple plucked string instrument using the example from the Csound source:
+
+<CodeGroup>
+```csound pluck.csd
+<CsoundSynthesizer>
+<CsOptions>
+-o dac
+</CsOptions>
+
+<CsInstruments>
+sr = 44100
+ksmps = 300
+nchnls = 2
+0dbfs = 1
+
+instr Pluck
+  kamp = 0.8
+  kcps = p4        ; Frequency from score p4
+  icps = 100
+  ifn = 0
+  imeth = 1
+  
+  apluck pluck kamp, kcps, icps, ifn, imeth
+  outs apluck, apluck
+endin
+
+instr Sine
+  kamp = 0.4
+  kcps = p4        ; Frequency from score p4
+  ifn = 1          ; Use function table 1
+  
+  asine oscil kamp, kcps, ifn
+  outs asine, asine
+endin
+</CsInstruments>
+
+<CsScore>
+; Create a sine wave function table
+f 1 0 16384 10 1
+
+; Play plucked strings
+i "Pluck" 0   0.5 440
+i "Pluck" 0.5 0.5 550
+i "Pluck" 1   0.5 660
+
+; Play sine wave notes
+i "Sine"  1.5 0.5 440
+i "Sine"  2   0.5 330
+
+e
+</CsScore>
+</CsoundSynthesizer>
+```
+
+```csound xanadu-excerpt.csd
+<CsoundSynthesizer>
+<CsOptions>
+-o dac
+</CsOptions>
+
+<CsInstruments>
+sr = 48000
+ksmps = 128
+nchnls = 2
+0dbfs = 1
+
+; Plucked string with chorusing and delay
+instr PluckedString
+  ishift = .00666667           ; Pitch shift amount
+  ipch = cpspch(p5)            ; Convert pitch class to Hz
+  ioct = octpch(p5)            ; Convert to octave format
+  
+  ; Add vibrato
+  kvib oscili 1/120, ipch/50, 1
+  
+  ; Three slightly detuned plucked strings
+  ag pluck 2000, cpsoct(ioct+kvib), 1000, 1, 1
+  agleft pluck 2000, cpsoct(ioct+ishift), 1000, 1, 1
+  agright pluck 2000, cpsoct(ioct-ishift), 1000, 1, 1
+  
+  ; Exponential envelopes for delay tap times
+  af1 expon .1, p3, 1.0
+  af2 expon 1.0, p3, .1
+  
+  ; Delay line with multiple taps
+  adump delayr 2.0
+  atap1 deltapi af1
+  atap2 deltapi af2
+  ad1 deltap 2.0
+  ad2 deltap 1.1
+  delayw ag
+  
+  ; Mix and output
+  outleft = (agleft + atap1 + ad1) * 0.3
+  outright = (agright + atap2 + ad2) * 0.3
+  outs outleft, outright
+endin
+</CsInstruments>
+
+<CsScore>
+; Sine wave function
+f1 0 65536 10 1
+
+; Play notes from Xanadu piece
+i "PluckedString" 0   3 0 8.06
+i "PluckedString" 0.5 3 0 8.01
+i "PluckedString" 1   3 0 8.06
+i "PluckedString" 1.5 3 0 8.10
+
+e
+</CsScore>
+</CsoundSynthesizer>
+```
+</CodeGroup>
+
+<Tip>
+  The second example is adapted from the famous "Xanadu" piece included in the Csound source repository.
+</Tip>
+
+## Score notation
+
+The score uses a simple text format:
+
+### Instrument statements (i-statements)
+
+```
+i [name/number] [start] [duration] [p4] [p5] ...
+```
+
+- **i**: Instrument statement
+- **name/number**: Instrument identifier (can be number or string)
+- **start**: Start time in seconds
+- **duration**: Duration in seconds
+- **p4, p5, ...**: Additional parameters passed to the instrument
+
+### Function tables (f-statements)
+
+```
+f [number] [start] [size] [GEN] [args...]
+```
+
+- **f**: Function table statement
+- **number**: Table number for reference
+- **start**: Creation time (usually 0)
+- **size**: Table size (usually power of 2)
+- **GEN**: Generator routine number
+- **args**: Arguments for the generator
+
+<Note>
+  `GEN10` creates a waveform using sine wave harmonics. `f 1 0 16384 10 1` creates a simple sine wave.
+</Note>
+
+## Real-time vs. rendering
+
+Csound can output audio in two ways:
+
+<Tabs>
+  <Tab title="Real-time output">
+    Play audio through your speakers immediately:
+
+    ```bash
+    csound -o dac hello.csd
+    ```
+
+    The `-o dac` option sends output to your audio device (DAC = Digital-to-Analog Converter).
+  </Tab>
+
+  <Tab title="Render to file">
+    Save audio to a file for later:
+
+    ```bash
+    csound -o output.wav hello.csd
+    ```
+
+    This renders the audio offline to a WAV file.
+  </Tab>
+</Tabs>
+
+## Common opcodes to explore
+
+Here are some essential opcodes to experiment with:
+
+<CardGroup cols={2}>
+  <Card title="oscil / oscili" icon="wave-sine">
+    Basic oscillators for generating waveforms (sine, saw, square, etc.)
+  </Card>
+  
+  <Card title="pluck" icon="guitar">
+    Karplus-Strong plucked string algorithm
+  </Card>
+  
+  <Card title="reverb / freeverb" icon="arrows-repeat">
+    Add reverb and spatial effects
+  </Card>
+  
+  <Card title="moog" icon="sliders">
+    Moog-style low-pass filter
+  </Card>
+  
+  <Card title="delay / delayr/delayw" icon="clock">
+    Create echo and delay effects
+  </Card>
+  
+  <Card title="lfo" icon="wave-pulse">
+    Low-frequency oscillator for modulation
+  </Card>
+</CardGroup>
+
+## Useful command-line options
+
+<CodeGroup>
+```bash Audio output
+-o dac          # Output to speakers
+-o file.wav     # Render to WAV file
+-o file.aif     # Render to AIFF file
+```
+
+```bash Display options
+-d              # Suppress display messages
+-m 0            # No messages
+-m 7            # Display warnings and errors
+```
+
+```bash Performance
+-b 512          # Buffer size
+-B 2048         # Output buffer size
+```
+</CodeGroup>
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
+Now that you've created your first Csound programs:
 
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Explore opcodes" icon="book" href="https://docs.csound.com">
+    Browse the Csound Reference Manual for thousands of opcodes
+  </Card>
+  
+  <Card title="Learn the API" icon="code" href="https://csound.github.io/docs/api">
+    Embed Csound in your own applications
+  </Card>
+  
+  <Card title="Join the community" icon="users" href="https://csound.com">
+    Connect with other Csound users and developers
+  </Card>
+  
+  <Card title="Study examples" icon="folder-open">
+    Check the examples directory in the Csound source repository
+  </Card>
 </CardGroup>
 
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>
+## Tips for learning
+
+<Tip>
+  **Start simple**: Begin with basic oscillators and gradually add complexity. Csound has a steep learning curve, but the power is worth it.
+</Tip>
+
+<Tip>
+  **Read the manual**: The Csound Reference Manual is comprehensive and well-written. Each opcode includes examples.
+</Tip>
+
+<Tip>
+  **Experiment**: Modify examples and see what happens. Csound is very forgiving and won't damage your speakers (as long as you keep amplitudes reasonable).
+</Tip>
+
+<Warning>
+  Always test with low volume first! Some synthesis techniques can produce unexpectedly loud output.
+</Warning>

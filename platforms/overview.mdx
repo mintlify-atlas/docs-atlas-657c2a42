@@ -1,0 +1,88 @@
+---
+title: Platform support overview
+description: Overview of platforms where Csound can run
+---
+
+Csound is a highly portable audio programming language that runs on a wide variety of platforms, from desktop computers to mobile devices and embedded systems.
+
+<CardGroup cols={2}>
+  <Card title="Desktop platforms" icon="desktop" href="/platforms/desktop">
+    macOS, Linux, and Windows support with full features
+  </Card>
+  <Card title="Web assembly" icon="globe" href="/platforms/web-assembly">
+    Run Csound in the browser using WebAssembly
+  </Card>
+  <Card title="iOS" icon="mobile" href="/platforms/ios">
+    Native iOS framework for iPhone and iPad
+  </Card>
+  <Card title="Android" icon="android" href="/platforms/android">
+    Android library with JNI and Java interface
+  </Card>
+  <Card title="Embedded platforms" icon="microchip" href="/platforms/embedded">
+    Bela, Daisy, and other embedded hardware
+  </Card>
+</CardGroup>
+
+## Platform comparison
+
+| Platform | Audio I/O | MIDI | Real-time | Build system |
+|----------|-----------|------|-----------|-------------|
+| macOS | CoreAudio, JACK | CoreMIDI | Yes | CMake |
+| Linux | ALSA, JACK, PulseAudio | ALSA, PortMIDI | Yes | CMake |
+| Windows | PortAudio | PortMIDI | Yes | CMake + vcpkg |
+| WebAssembly | Web Audio API | Web MIDI API | Yes | CMake + Emscripten |
+| iOS | CoreAudio | CoreMIDI | Yes | CMake + Xcode |
+| Android | OpenSL ES | Android MIDI | Yes | NDK + CMake |
+| Bela | Bela audio | Bela MIDI | Yes | CMake (cross-compile) |
+| Daisy | Daisy audio | - | Yes | CMake (cross-compile) |
+
+## Requirements
+
+All platforms require:
+
+- **CMake**: Build system (cmake.org)
+- **C compiler**: Complete C development toolchain
+- **Flex and Bison**: For the Csound parser (bison 3.8+, flex 2.6+)
+
+Optional components:
+
+- **C++ compiler**: For some components
+- **libsndfile**: For soundfile I/O (can be disabled with `USE_LIBSNDFILE=0`)
+- **Git**: For cloning and syncing with the latest source
+
+## Common build options
+
+These CMake options work across all platforms:
+
+```bash
+# Custom installation location
+-DCMAKE_INSTALL_PREFIX=/path/to/install
+
+# Disable libsndfile
+-DUSE_LIBSNDFILE=0
+
+# Disable libsamplerate
+-DUSE_LIBSAMPLERATE=0
+
+# Build plugins as separate libraries
+-DBUILD_PLUGINS=1
+
+# Use custom CMake configuration
+-DCUSTOM_CMAKE=custom.cmake
+```
+
+View all available options:
+
+```bash
+cmake -LAH
+```
+
+## Source code
+
+Csound source code is available on GitHub:
+
+```bash
+git clone https://github.com/csound/csound.git
+```
+
+Build instructions for each platform can be found in the platform-specific pages.

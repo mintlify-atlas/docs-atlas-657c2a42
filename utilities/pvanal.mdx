@@ -1,0 +1,170 @@
+---
+title: pvanal
+description: Phase vocoder analysis utility
+---
+
+The `pvanal` utility performs phase vocoder analysis on sound files, creating FFT-based analysis files for time-frequency domain processing. This analysis enables time-stretching, pitch-shifting, and spectral transformations.
+
+## Syntax
+
+```bash
+pvanal [options] inputSoundfile outputFFTfile.pvx
+```
+
+## Arguments
+
+- `inputSoundfile` - Input audio file to analyze
+- `outputFFTfile.pvx` - Output phase vocoder analysis file
+
+## Options
+
+### Basic parameters
+
+| Option | Description |
+|--------|-------------|
+| `-c <channel>` | Channel to analyze (default: all channels) |
+| `-b <beginTime>` | Start time in seconds |
+| `-d <duration>` | Duration to analyze in seconds |
+| `-s <srate>` | Override input sample rate |
+
+### Analysis parameters
+
+| Option | Description |
+|--------|-------------|
+| `-n <frameSize>` | FFT frame size in samples |
+| `-w <windowOverlap>` | Number of overlapping windows (default: 4) |
+| `-h <hopSize>` | Hop size between frames |
+
+### Window type
+
+| Option | Description |
+|--------|-------------|
+| `-H` | Use Hamming window (default is von Hann) |
+| `-K` | Use Kaiser window |
+| `-B <beta>` | Beta parameter for Kaiser window (default: 6.8) |
+
+### Display options
+
+| Option | Description |
+|--------|-------------|
+| `-g` | Enable graphical display |
+| `-G <latch>` | Graphical display with update rate |
+| `-v` | Verbose output |
+| `-V <txtFile>` | Write verbose output to text file |
+
+## Examples
+
+### Basic phase vocoder analysis
+
+```bash
+pvanal input.wav output.pvx
+```
+
+### Analysis with specific FFT size
+
+```bash
+pvanal -n 2048 input.wav output.pvx
+```
+
+### High-quality analysis with more overlap
+
+```bash
+pvanal -n 4096 -w 8 input.wav output.pvx
+```
+
+### Analysis with Kaiser window
+
+```bash
+pvanal -K -B 8.0 input.wav output.pvx
+```
+
+### Analyze specific channel and time range
+
+```bash
+pvanal -c 1 -b 5.0 -d 10.0 input.wav output.pvx
+```
+
+### Stereo analysis with custom hop size
+
+```bash
+pvanal -h 256 stereo.wav stereo.pvx
+```
+
+## Output file format
+
+The `.pvx` file contains:
+
+- **Header**: Sample rate, channels, frame size, overlap factor
+- **Frames**: For each analysis frame:
+  - Amplitude values for each frequency bin
+  - Phase or frequency values for each bin
+
+## Frame size considerations
+
+### Choosing FFT size
+
+- **512-1024**: Good for percussive sounds, fast transients
+- **2048**: General purpose, balanced time/frequency resolution
+- **4096-8192**: Better for sustained sounds, pitch analysis
+- **16384+**: Very fine frequency resolution for long sustained tones
+
+### Overlap factor
+
+- **2**: Minimal overlap, faster analysis, coarser time resolution
+- **4**: Standard overlap (default), good balance
+- **8**: High overlap, smoother time evolution, more frames
+
+## Window types
+
+### Von Hann (default)
+
+Good general-purpose window with:
+- Moderate frequency resolution
+- Low sidelobes
+- Smooth amplitude envelope
+
+### Hamming
+
+Better frequency resolution but:
+- Higher sidelobes
+- Less smooth amplitude envelope
+- Good for tonal analysis
+
+### Kaiser
+
+Parametric window with:
+- Adjustable sidelobe rejection via beta parameter
+- Higher beta = better sidelobe rejection but wider main lobe
+- Beta 6.8 (default) approximates Blackman-Harris window
+
+## Using PVX files in Csound
+
+Phase vocoder analysis files can be used with Csound opcodes:
+
+- `pvsfread` - Read phase vocoder analysis file
+- `pvoc` - Classic phase vocoder resynthesis
+- `vpvoc` - Variable-speed phase vocoder
+- `pvinterp` - Interpolate between two PV analysis files
+- `pvcross` - Cross-synthesis between PV files
+
+## Technical notes
+
+### Memory usage
+
+Memory requirements depend on:
+- Duration of analysis
+- Frame size
+- Overlap factor
+- Number of channels
+
+Estimate: `duration × samplerate × channels × (1 + overlap) / frameSize × frameSize × 8 bytes`
+
+### Analysis speed
+
+Larger frame sizes and higher overlap factors increase analysis time but provide better spectral resolution and smoother time evolution.
+
+## Related utilities
+
+- [atsa](/utilities/atsa) - ATS analysis for sinusoidal modeling
+- [hetro](/utilities/hetro) - Heterodyne filter analysis
+- [lpanal](/utilities/lpanal) - Linear predictive analysis

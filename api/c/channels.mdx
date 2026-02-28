@@ -1,0 +1,485 @@
+---
+title: Software bus channel functions
+description: Functions for communicating with Csound via named software channels
+---
+
+## Overview
+
+Csound's software bus provides named channels for bidirectional communication between host applications and running Csound instruments. Channels support multiple data types:
+
+- **Control channels** - Single `MYFLT` values (k-rate variables)
+- **Audio channels** - `ksmps` audio samples (a-rate signals)
+- **String channels** - Text data
+- **Array channels** - Multi-dimensional arrays
+- **PVS channels** - Phase vocoder streaming data
+
+## Channel types
+
+Channels are created with type flags:
+
+```c
+CSO UND_CONTROL_CHANNEL  // Control data (1 MYFLT)
+CSOUND_AUDIO_CHANNEL     // Audio data (ksmps MYFLTs)
+CSOUND_STRING_CHANNEL    // String data (STRINGDAT)
+CSOUND_ARRAY_CHANNEL     // Array data (ARRAYDAT)
+CSOUND_PVS_CHANNEL       // PVS data (PVSDAT)
+
+CSOUND_INPUT_CHANNEL     // Host writes, Csound reads
+CSOUND_OUTPUT_CHANNEL    // Csound writes, host reads
+```
+
+## csoundGetChannelPtr
+
+```c
+int32_t csoundGetChannelPtr(CSOUND *csound, void **p, 
+                            const char *name, int32_t type);
+```
+
+Store a pointer to the specified bus channel in `*p`, creating the channel first if it doesn't exist.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="p" type="void**" required>
+  Address where channel pointer will be stored. Cast to appropriate type:
+  - `(MYFLT**)` for control channels
+  - `(MYFLT**)` for audio channels  
+  - `(STRINGDAT**)` for string channels
+  - `(ARRAYDAT**)` for array channels
+  - `(PVSDAT**)` for PVS channels
+</ParamField>
+
+<ParamField path="name" type="const char*" required>
+  Channel name
+</ParamField>
+
+<ParamField path="type" type="int32_t" required>
+  Bitwise OR of channel type and direction flags. Set to `0` to query existing channel type without creating.
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  - `0` on success
+  - `CSOUND_MEMORY` - Not enough memory
+  - `CSOUND_ERROR` - Invalid name or type
+  - Positive value - Type of existing incompatible channel
+</ResponseField>
+
+<Warning>
+  Audio and string channels can only be created after `csoundCompile()` because storage size depends on ksmps.
+</Warning>
+
+### Example: Control channel
+
+```c
+MYFLT *channel_ptr;
+int result = csoundGetChannelPtr(csound, (void**)&channel_ptr, "volume",
+                                  CSOUND_CONTROL_CHANNEL | CSOUND_INPUT_CHANNEL);
+if (result == CSOUND_SUCCESS) {
+    *channel_ptr = 0.5;  // Set volume to 0.5
+}
+```
+
+### Example: Audio channel
+
+```c
+csoundCompile(csound, argc, argv);
+
+MYFLT *audio_channel;
+int result = csoundGetChannelPtr(csound, (void**)&audio_channel, "audio_in",
+                                  CSOUND_AUDIO_CHANNEL | CSOUND_INPUT_CHANNEL);
+                                  
+uint32_t ksmps = csoundGetKsmps(csound);
+csoundStart(csound);
+
+while (!csoundPerformKsmps(csound)) {
+    // Write audio to channel
+    for (uint32_t i = 0; i < ksmps; i++) {
+        audio_channel[i] = getNextAudioSample();
+    }
+    csoundPerformKsmps(csound);
+}
+```
+
+## Thread-safe channel access
+
+## csoundLockChannel
+
+```c
+void csoundLockChannel(CSOUND *csound, const char *channel);
+```
+
+Lock a channel for thread-safe access to its data.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="channel" type="const char*" required>
+  Channel name
+</ParamField>
+
+## csoundUnlockChannel
+
+```c
+void csoundUnlockChannel(CSOUND *csound, const char *channel);
+```
+
+Unlock a previously locked channel.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="channel" type="const char*" required>
+  Channel name
+</ParamField>
+
+### Example: Thread-safe access
+
+```c
+MYFLT *channel;
+csoundGetChannelPtr(csound, (void**)&channel, "data",
+                    CSOUND_CONTROL_CHANNEL | CSOUND_INPUT_CHANNEL);
+
+// From another thread
+csoundLockChannel(csound, "data");
+*channel = new_value;
+csoundUnlockChannel(csound, "data");
+```
+
+## Simplified channel functions
+
+These functions provide thread-safe access without requiring manual locking:
+
+## csoundGetControlChannel
+
+```c
+MYFLT csoundGetControlChannel(CSOUND *csound, const char *name, int32_t *err);
+```
+
+Retrieve the value of a control channel (thread-safe).
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="name" type="const char*" required>
+  Channel name
+</ParamField>
+
+<ParamField path="err" type="int32_t*">
+  Optional pointer to store error code. Can be `NULL`.
+</ParamField>
+
+<ResponseField name="return" type="MYFLT">
+  Channel value
+</ResponseField>
+
+### Example
+
+```c
+int32_t err;
+MYFLT value = csoundGetControlChannel(csound, "frequency", &err);
+if (err == CSOUND_SUCCESS) {
+    printf("Frequency: %f Hz\n", value);
+}
+```
+
+## csoundSetControlChannel
+
+```c
+void csoundSetControlChannel(CSOUND *csound, const char *name, MYFLT val);
+```
+
+Set the value of a control channel (thread-safe).
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="name" type="const char*" required>
+  Channel name
+</ParamField>
+
+<ParamField path="val" type="MYFLT" required>
+  New channel value
+</ParamField>
+
+### Example
+
+```c
+// From host application
+csoundSetControlChannel(csound, "cutoff", 1000.0);
+csoundSetControlChannel(csound, "resonance", 0.7);
+```
+
+## csoundGetAudioChannel
+
+```c
+void csoundGetAudioChannel(CSOUND *csound, const char *name, MYFLT *samples);
+```
+
+Copy audio channel data into the provided array (thread-safe).
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="name" type="const char*" required>
+  Channel name
+</ParamField>
+
+<ParamField path="samples" type="MYFLT*" required>
+  Destination array (must have space for ksmps samples)
+</ParamField>
+
+### Example
+
+```c
+uint32_t ksmps = csoundGetKsmps(csound);
+MYFLT *buffer = (MYFLT*)malloc(ksmps * sizeof(MYFLT));
+
+csoundGetAudioChannel(csound, "output_signal", buffer);
+
+// Process buffer...
+free(buffer);
+```
+
+## csoundSetAudioChannel
+
+```c
+void csoundSetAudioChannel(CSOUND *csound, const char *name, 
+                           const MYFLT *samples);
+```
+
+Set audio channel data from the provided array (thread-safe).
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="name" type="const char*" required>
+  Channel name
+</ParamField>
+
+<ParamField path="samples" type="const MYFLT*" required>
+  Source array (must contain at least ksmps samples)
+</ParamField>
+
+## csoundGetStringChannel
+
+```c
+void csoundGetStringChannel(CSOUND *csound, const char *name, char *string);
+```
+
+Copy string channel contents into the provided buffer.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="name" type="const char*" required>
+  Channel name
+</ParamField>
+
+<ParamField path="string" type="char*" required>
+  Destination buffer (use `csoundGetChannelDatasize()` to determine size needed)
+</ParamField>
+
+## csoundSetStringChannel
+
+```c
+void csoundSetStringChannel(CSOUND *csound, const char *name, 
+                            const char *string);
+```
+
+Set string channel contents.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="name" type="const char*" required>
+  Channel name
+</ParamField>
+
+<ParamField path="string" type="const char*" required>
+  Null-terminated string to set
+</ParamField>
+
+### Example
+
+```c
+// Set from host
+csoundSetStringChannel(csound, "filename", "/path/to/sample.wav");
+
+// Read from host
+int32_t size = csoundGetChannelDatasize(csound, "message");
+char *buffer = (char*)malloc(size);
+csoundGetStringChannel(csound, "message", buffer);
+printf("Message: %s\n", buffer);
+free(buffer);
+```
+
+## Channel information
+
+## csoundListChannels
+
+```c
+int32_t csoundListChannels(CSOUND *csound, controlChannelInfo_t **lst);
+```
+
+Returns a list of allocated channels. The caller must free the list with `csoundDeleteChannelList()`.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="lst" type="controlChannelInfo_t**" required>
+  Address where list pointer will be stored
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  Number of channels, or `CSOUND_MEMORY` on allocation error
+</ResponseField>
+
+### Example
+
+```c
+controlChannelInfo_t *channel_list;
+int num_channels = csoundListChannels(csound, &channel_list);
+
+if (num_channels >= 0) {
+    for (int i = 0; i < num_channels; i++) {
+        printf("Channel: %s, Type: %d\n", 
+               channel_list[i].name, 
+               channel_list[i].type);
+    }
+    csoundDeleteChannelList(csound, channel_list);
+}
+```
+
+## csoundDeleteChannelList
+
+```c
+void csoundDeleteChannelList(CSOUND *csound, controlChannelInfo_t *lst);
+```
+
+Release a channel list previously returned by `csoundListChannels()`.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="lst" type="controlChannelInfo_t*" required>
+  Channel list to free
+</ParamField>
+
+## csoundGetChannelDatasize
+
+```c
+int32_t csoundGetChannelDatasize(CSOUND *csound, const char *name);
+```
+
+Returns the size of data stored in a channel. For string channels, this may change if the channel is reallocated.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="name" type="const char*" required>
+  Channel name
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  Size in bytes, or negative on error
+</ResponseField>
+
+## Control channel hints
+
+## csoundSetControlChannelHints
+
+```c
+int32_t csoundSetControlChannelHints(CSOUND *csound, const char *name,
+                                     controlChannelHints_t hints);
+```
+
+Set parameter hints for a control channel. These hints have no internal function but can be used by frontends to construct GUIs or constrain values.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="name" type="const char*" required>
+  Channel name
+</ParamField>
+
+<ParamField path="hints" type="controlChannelHints_t" required>
+  Hints structure with fields:
+  - `behav` - Behavior (int, linear, exponential)
+  - `dflt` - Default value
+  - `min` - Minimum value
+  - `max` - Maximum value
+  - `x`, `y`, `width`, `height` - GUI positioning
+  - `attributes` - Additional attributes string (set to NULL if unused)
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  `0` on success, `CSOUND_ERROR` or `CSOUND_MEMORY` on failure
+</ResponseField>
+
+### Example
+
+```c
+controlChannelHints_t hints;
+memset(&hints, 0, sizeof(hints));
+
+hints.behav = CSOUND_CONTROL_CHANNEL_LIN;
+hints.dflt = 0.5;
+hints.min = 0.0;
+hints.max = 1.0;
+hints.attributes = NULL;
+
+csoundSetControlChannelHints(csound, "volume", hints);
+```
+
+## csoundGetControlChannelHints
+
+```c
+int32_t csoundGetControlChannelHints(CSOUND *csound, const char *name,
+                                     controlChannelHints_t *hints);
+```
+
+Get parameter hints for a control channel. The `attributes` member will be allocated and must be freed by the caller.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="name" type="const char*" required>
+  Channel name
+</ParamField>
+
+<ParamField path="hints" type="controlChannelHints_t*" required>
+  Preallocated hints structure to fill
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  `0` if channel exists and is a control channel, otherwise an error code
+</ResponseField>
+
+### Example
+
+```c
+controlChannelHints_t hints;
+int result = csoundGetControlChannelHints(csound, "cutoff", &hints);
+
+if (result == CSOUND_SUCCESS) {
+    printf("Range: %f to %f, Default: %f\n",
+           hints.min, hints.max, hints.dflt);
+    if (hints.attributes != NULL) {
+        free(hints.attributes);
+    }
+}
+```

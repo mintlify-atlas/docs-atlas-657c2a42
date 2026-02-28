@@ -1,0 +1,236 @@
+---
+title: cvanal
+description: Convolution analysis utility
+---
+
+The `cvanal` utility performs FFT analysis on impulse response files for use with Csound's convolution opcodes. It converts time-domain impulse responses into frequency-domain representations optimized for fast convolution.
+
+## Syntax
+
+```bash
+cvanal [options] input_soundfile output_analysis_file
+```
+
+## Arguments
+
+- `input_soundfile` - Input impulse response audio file
+- `output_analysis_file` - Output convolution analysis file
+
+## Options
+
+### File and time selection
+
+| Option | Description |
+|--------|-------------|
+| `-s <rate>` | Override input sample rate |
+| `-c <channel>` | Channel to analyze (1-4, default: all channels) |
+| `-b <time>` | Begin time in seconds |
+| `-d <duration>` | Duration to analyze in seconds |
+
+### File format
+
+| Option | Description |
+|--------|-------------|
+| `-X` | Use new text-based format (machine-independent) |
+
+## Examples
+
+### Basic impulse response analysis
+
+```bash
+cvanal impulse.wav impulse.cv
+```
+
+### Analyze specific channel
+
+```bash
+cvanal -c 1 stereo_ir.wav left_ir.cv
+```
+
+### Analyze time segment
+
+```bash
+cvanal -b 0.5 -d 2.0 long_ir.wav short_ir.cv
+```
+
+### Use portable text format
+
+```bash
+cvanal -X impulse.wav impulse.cv
+```
+
+### Multi-channel room response
+
+```bash
+cvanal room_response.wav room.cv
+```
+
+## Output file format
+
+The analysis file contains:
+
+- **Header**: Sample rate, channels, impulse response length, FFT size
+- **FFT data**: Frequency-domain representation of the impulse response
+- **Format flag**: Indicates rectangular (time-domain derived) format
+
+## FFT size and zero-padding
+
+The utility automatically:
+
+1. Determines impulse response length `H` from input
+2. Calculates FFT size as next power of 2 ≥ `2H - 1`
+3. Zero-pads impulse response to FFT size
+4. Performs FFT on zero-padded signal
+
+This ensures proper convolution without time-domain aliasing.
+
+## Impulse response considerations
+
+### Recording impulse responses
+
+Good impulse responses should:
+
+- Start at time zero with no pre-delay
+- Decay to silence within the recording
+- Have minimal background noise
+- Be normalized to prevent clipping
+
+### Types of impulse responses
+
+**Room acoustics**:
+- Concert halls
+- Studios
+- Churches
+- Special acoustic spaces
+
+**Device responses**:
+- Speaker cabinets
+- Microphone characteristics
+- Analog equipment
+- Audio effects
+
+**Synthetic responses**:
+- Custom filter designs
+- EQ curves
+- Artificial reverbs
+
+## Channel handling
+
+### Mono impulse responses
+
+Apply same response to all channels:
+
+```bash
+cvanal -c 1 mono_ir.wav ir.cv
+```
+
+### Stereo impulse responses
+
+Convolve with stereo files:
+
+```bash
+cvanal stereo_ir.wav stereo.cv
+```
+
+### Multi-channel responses
+
+For surround sound or specialized routing:
+
+```bash
+cvanal -c 2 multi_ir.wav channel2.cv
+```
+
+## File formats
+
+### Binary format (default)
+
+- Machine-dependent byte order
+- Smaller file size
+- Faster to read
+- May not be portable across systems
+
+### Text format (`-X` flag)
+
+- Machine-independent
+- Portable across platforms
+- Human-readable (for debugging)
+- Larger file size
+- Slower to read
+
+## Using convolution files in Csound
+
+Convolution analysis files are used with:
+
+- `convolve` - Time-domain convolution
+- `pconvolve` - Partitioned convolution for efficiency
+
+Example Csound code:
+
+```csound
+instr 1
+  asig soundin "input.wav"
+  aconv pconvolve asig, "room.cv"
+  out aconv
+endin
+```
+
+## Performance considerations
+
+### FFT size impact
+
+- Larger impulse responses require larger FFT sizes
+- FFT size affects convolution efficiency
+- Very long responses (>1 second) may require partitioned convolution
+
+### Memory usage
+
+Memory required (bytes) ≈ `FFT_size × channels × 8`
+
+For a 2-second impulse at 44.1kHz:
+- Impulse length: 88,200 samples  
+- FFT size: 131,072 (next power of 2 ≥ 176,399)
+- Memory: ~1 MB per channel
+
+## Troubleshooting
+
+### Analysis fails
+
+- Check input file is valid audio
+- Verify sufficient disk space
+- Check file permissions
+
+### Output sounds wrong
+
+- Ensure impulse response starts at time zero
+- Check for DC offset in impulse (can cause artifacts)
+- Verify impulse doesn't clip
+- Try normalizing impulse response first
+
+### File too large
+
+- Trim silence from end of impulse
+- Use `-d` to limit duration
+- Consider shorter impulse responses
+
+## Technical details
+
+### FFT convolution
+
+The frequency-domain convolution theorem states:
+
+```
+convolution(x, h) = IFFT(FFT(x) × FFT(h))
+```
+
+This is more efficient than time-domain convolution for long impulses.
+
+### Zero-padding requirement
+
+To avoid circular convolution artifacts:
+- Minimum FFT size = `input_length + impulse_length - 1`
+- Utility rounds up to next power of 2
+
+## Related utilities
+
+- [pvanal](/utilities/pvanal) - Phase vocoder analysis
+- [sndinfo](/utilities/sndinfo) - Display sound file information

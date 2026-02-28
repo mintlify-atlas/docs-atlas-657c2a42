@@ -1,0 +1,247 @@
+---
+title: Initialization functions
+description: Functions for creating, configuring, and destroying Csound instances
+---
+
+## csoundInitialize
+
+```c
+int32_t csoundInitialize(int32_t flags);
+```
+
+Initialize the Csound library with specific flags. This function is called internally by `csoundCreate()`, so there is generally no need to use it explicitly unless you need to avoid default initialization that sets signal handlers and atexit() callbacks.
+
+<ParamField path="flags" type="int32_t" required>
+  Bitwise OR of initialization flags:
+  - `CSOUNDINIT_NO_SIGNAL_HANDLER` (1) - Don't install signal handlers
+  - `CSOUNDINIT_NO_ATEXIT` (2) - Don't register atexit() callbacks
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  - `0` on success
+  - Positive if initialization was already done
+  - Negative on error
+</ResponseField>
+
+### Example
+
+```c
+#include "csound.h"
+
+int main(int argc, char **argv) {
+    // Initialize without signal handlers (we'll use our own)
+    csoundInitialize(CSOUNDINIT_NO_SIGNAL_HANDLER);
+    
+    CSOUND *csound = csoundCreate(NULL, NULL);
+    // ... use csound
+    csoundDestroy(csound);
+    return 0;
+}
+```
+
+## csoundCreate
+
+```c
+CSOUND *csoundCreate(void *hostData, const char *opcodedir);
+```
+
+Create an instance of Csound. Returns an opaque pointer that must be passed to most Csound API functions.
+
+<ParamField path="hostData" type="void*">
+  User data pointer accessible via `csoundGetHostData()`. Can be `NULL`.
+</ParamField>
+
+<ParamField path="opcodedir" type="const char*">
+  Override for the plugin module/opcode directory search. Can be `NULL` to use default.
+</ParamField>
+
+<ResponseField name="return" type="CSOUND*">
+  Pointer to the new Csound instance, or `NULL` on failure
+</ResponseField>
+
+### Example
+
+```c
+// Create with no host data or custom opcode directory
+CSOUND *csound = csoundCreate(NULL, NULL);
+if (!csound) {
+    fprintf(stderr, "Failed to create Csound instance\n");
+    return -1;
+}
+
+// Use csound...
+
+csoundDestroy(csound);
+```
+
+### Example with host data
+
+```c
+typedef struct {
+    int sample_rate;
+    void *audio_context;
+} HostContext;
+
+HostContext context = {44100, NULL};
+CSO UND *csound = csoundCreate(&context, NULL);
+
+// Later, retrieve the host data
+HostContext *ctx = (HostContext*)csoundGetHostData(csound);
+printf("Sample rate: %d\n", ctx->sample_rate);
+```
+
+## csoundDestroy
+
+```c
+void csoundDestroy(CSOUND *csound);
+```
+
+Destroy an instance of Csound. This function releases all resources associated with the Csound instance.
+
+<ParamField path="csound" type="CSOUND*" required>
+  Pointer to the Csound instance to destroy
+</ParamField>
+
+### Example
+
+```c
+CSO UND *csound = csoundCreate(NULL, NULL);
+// ... use csound ...
+csoundDestroy(csound);
+csound = NULL; // Good practice
+```
+
+## csoundGetVersion
+
+```c
+int32_t csoundGetVersion(void);
+```
+
+Returns the version number times 1000 (e.g., version 6.18.0 returns 6180).
+
+<ResponseField name="return" type="int32_t">
+  Version number times 1000
+</ResponseField>
+
+### Example
+
+```c
+int32_t version = csoundGetVersion();
+printf("Csound version: %d.%d.%d\n", 
+       version / 1000, 
+       (version % 1000) / 10, 
+       version % 10);
+```
+
+## csoundGetHostData
+
+```c
+void *csoundGetHostData(CSOUND *csound);
+```
+
+Returns the host data pointer that was passed to `csoundCreate()`.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ResponseField name="return" type="void*">
+  The host data pointer, or `NULL` if none was set
+</ResponseField>
+
+## csoundSetHostData
+
+```c
+void csoundSetHostData(CSOUND *csound, void *hostData);
+```
+
+Sets or updates the host data pointer.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="hostData" type="void*" required>
+  Pointer to host application data
+</ParamField>
+
+## csoundSetOption
+
+```c
+int32_t csoundSetOption(CSOUND *csound, const char *option);
+```
+
+Set Csound options (command-line flags). This must be called after `csoundCreate()` and before any code is compiled. Multiple options are allowed in one string.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="option" type="const char*" required>
+  Option string (e.g., "-odac", "-m0", "--sample-rate=48000")
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  `CSOUND_SUCCESS` (0) on success, non-zero on error
+</ResponseField>
+
+### Example
+
+```c
+CSO UND *csound = csoundCreate(NULL, NULL);
+
+// Set multiple options
+csoundSetOption(csound, "-odac");           // Output to DAC
+csoundSetOption(csound, "-m0");             // Disable messages
+csoundSetOption(csound, "--sample-rate=48000"); // Set sample rate
+
+int result = csoundCompile(csound, argc, argv);
+```
+
+## csoundGetParams
+
+```c
+const OPARMS *csoundGetParams(CSOUND *csound);
+```
+
+Get the current parameters from a Csound instance in an `OPARMS` structure.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ResponseField name="return" type="const OPARMS*">
+  Pointer to the parameters structure (read-only)
+</ResponseField>
+
+### Example
+
+```c
+const OPARMS *params = csoundGetParams(csound);
+printf("Sample rate override: %f\n", params->sr_override);
+printf("Control rate override: %f\n", params->kr_override);
+printf("Output file: %s\n", params->outfilename ? params->outfilename : "none");
+```
+
+## csoundGetSizeOfMYFLT
+
+```c
+int32_t csoundGetSizeOfMYFLT(void);
+```
+
+Return the size of `MYFLT` in bytes (either 4 for float or 8 for double).
+
+<ResponseField name="return" type="int32_t">
+  Size of `MYFLT` in bytes
+</ResponseField>
+
+### Example
+
+```c
+int32_t size = csoundGetSizeOfMYFLT();
+if (size == 4) {
+    printf("Using single-precision (float) audio\n");
+} else {
+    printf("Using double-precision (double) audio\n");
+}
+```

@@ -1,0 +1,582 @@
+---
+title: C API
+description: Core Csound C API reference
+---
+
+The Csound C API is the foundation for all language bindings. It provides complete control over Csound instances, compilation, performance, and audio I/O.
+
+## Header files
+
+The main header to include:
+
+```c
+#include <csound/csound.h>
+```
+
+Additional headers for specific functionality:
+
+```c
+#include <csound/csPerfThread.h>      // Performance thread utilities
+#include <csound/csound_circular_buffer.h>  // Thread-safe buffers
+#include <csound/csound_data_structures.h>  // Data structures
+```
+
+## Core types
+
+### CSOUND
+
+Opaque pointer to a Csound instance:
+
+```c
+typedef struct CSOUND_ CSOUND;
+```
+
+All API functions take a `CSOUND*` pointer as their first argument.
+
+### MYFLT
+
+Floating-point type for audio samples:
+
+```c
+typedef double MYFLT;  // or float, depending on build
+```
+
+Use `csoundGetSizeOfMYFLT()` to check the size at runtime.
+
+### Status codes
+
+```c
+typedef enum {
+    CSOUND_SUCCESS = 0,         // Completed successfully
+    CSOUND_ERROR = -1,          // Unspecified failure
+    CSOUND_INITIALIZATION = -2, // Failed during initialization
+    CSOUND_PERFORMANCE = -3,    // Failed during performance
+    CSOUND_MEMORY = -4,         // Failed to allocate memory
+    CSOUND_SIGNAL = -5          // Termination requested
+} CSOUND_STATUS;
+```
+
+### OPARMS
+
+Configuration parameters structure:
+
+```c
+typedef struct CSOUND_PARAMS {
+    int32_t odebug;           // Debug flag
+    int32_t sfread;           // Sound input read flag
+    int32_t sfwrite;          // Sound output write flag
+    int32_t filetyp;          // Soundfile type code
+    int32_t inbufsamps;       // Input buffer size in samples
+    int32_t outbufsamps;      // Output buffer size in samples
+    int32_t msglevel;         // Message level (-m)
+    MYFLT sr_override;        // Sampling rate override (-r)
+    MYFLT kr_override;        // Control rate override (-k)
+    int32_t nchnls_override;  // nchnls override
+    int32_t ksmps_override;   // ksmps override
+    MYFLT e0dbfs_override;    // 0dBFS override
+    // ... many more fields
+} OPARMS;
+```
+
+## Instantiation
+
+### csoundInitialize
+
+Initialize Csound library:
+
+```c
+int32_t csoundInitialize(int32_t flags);
+```
+
+**Parameters:**
+- `flags` - Initialization flags (combination of `CSOUNDINIT_*` constants)
+
+**Flags:**
+- `CSOUNDINIT_NO_SIGNAL_HANDLER` - Don't install signal handlers
+- `CSOUNDINIT_NO_ATEXIT` - Don't install atexit callbacks
+
+**Returns:** 0 on success, positive if already initialized, negative on error
+
+**Example:**
+```c
+csoundInitialize(CSOUNDINIT_NO_SIGNAL_HANDLER);
+```
+
+### csoundCreate
+
+Create a Csound instance:
+
+```c
+CSOUND *csoundCreate(void *hostData, const char *opcodedir);
+```
+
+**Parameters:**
+- `hostData` - Optional pointer to host data (can be NULL)
+- `opcodedir` - Override for plugin directory (can be NULL)
+
+**Returns:** Pointer to Csound instance, or NULL on failure
+
+**Example:**
+```c
+CSOUND *csound = csoundCreate(NULL, NULL);
+if (csound == NULL) {
+    fprintf(stderr, "Failed to create Csound instance\n");
+    return -1;
+}
+```
+
+### csoundDestroy
+
+Destroy a Csound instance:
+
+```c
+void csoundDestroy(CSOUND *csound);
+```
+
+**Example:**
+```c
+csoundDestroy(csound);
+csound = NULL;
+```
+
+## Compilation
+
+### csoundCompileCSD
+
+Compile a CSD file:
+
+```c
+int32_t csoundCompileCSD(CSOUND *csound, const char *path, 
+                         int32_t mode, int32_t realtime);
+```
+
+**Parameters:**
+- `csound` - Csound instance
+- `path` - Path to CSD file
+- `mode` - Compilation mode (0 for normal)
+- `realtime` - Realtime mode flag
+
+**Returns:** `CSOUND_SUCCESS` on success, error code otherwise
+
+**Example:**
+```c
+if (csoundCompileCSD(csound, "myfile.csd", 0, 0) != CSOUND_SUCCESS) {
+    fprintf(stderr, "Compilation failed\n");
+    csoundDestroy(csound);
+    return -1;
+}
+```
+
+### csoundCompileOrc
+
+Compile an orchestra string:
+
+```c
+int32_t csoundCompileOrc(CSOUND *csound, const char *str, int32_t async);
+```
+
+**Parameters:**
+- `csound` - Csound instance
+- `str` - Orchestra code string
+- `async` - Asynchronous compilation flag (0 or 1)
+
+**Returns:** `CSOUND_SUCCESS` on success, error code otherwise
+
+**Example:**
+```c
+const char *orc = 
+    "instr 1\n"
+    "  asig oscils 0.5, 440, 0\n"
+    "  outs asig, asig\n"
+    "endin\n";
+
+csoundCompileOrc(csound, orc, 0);
+```
+
+### csoundEvalCode
+
+Evaluate an expression:
+
+```c
+MYFLT csoundEvalCode(CSOUND *csound, const char *str);
+```
+
+**Example:**
+```c
+MYFLT result = csoundEvalCode(csound, "440 * 2");
+printf("Result: %f\n", result);  // 880.000000
+```
+
+## Performance
+
+### csoundStart
+
+Prepare Csound for performance:
+
+```c
+int32_t csoundStart(CSOUND *csound);
+```
+
+**Returns:** `CSOUND_SUCCESS` on success
+
+### csoundPerformKsmps
+
+Process one control period (ksmps samples):
+
+```c
+int32_t csoundPerformKsmps(CSOUND *csound);
+```
+
+**Returns:** 0 while processing, non-zero when finished
+
+**Example:**
+```c
+csoundStart(csound);
+while (csoundPerformKsmps(csound) == 0) {
+    // Audio processing happens here
+}
+```
+
+### csoundReset
+
+Reset Csound instance:
+
+```c
+void csoundReset(CSOUND *csound);
+```
+
+This allows reusing the instance for a new compilation.
+
+## Attributes
+
+### csoundGetVersion
+
+Get Csound version:
+
+```c
+int32_t csoundGetVersion(void);
+```
+
+**Returns:** Version number times 1000 (e.g., 7000 for version 7.0)
+
+### csoundGetSr
+
+Get sample rate:
+
+```c
+MYFLT csoundGetSr(CSOUND *csound);
+```
+
+**Returns:** Sample rate in Hz
+
+### csoundGetKr
+
+Get control rate:
+
+```c
+MYFLT csoundGetKr(CSOUND *csound);
+```
+
+**Returns:** Control rate in Hz
+
+### csoundGetKsmps
+
+Get samples per control period:
+
+```c
+uint32_t csoundGetKsmps(CSOUND *csound);
+```
+
+**Returns:** ksmps value (sr/kr)
+
+### csoundGetChannels
+
+Get number of output channels:
+
+```c
+uint32_t csoundGetChannels(CSOUND *csound, int32_t isInput);
+```
+
+**Parameters:**
+- `isInput` - 0 for output channels (nchnls), 1 for input channels (nchnls_i)
+
+**Returns:** Number of channels
+
+### csoundGet0dBFS
+
+Get 0dBFS level:
+
+```c
+MYFLT csoundGet0dBFS(CSOUND *csound);
+```
+
+**Returns:** 0dBFS value (typically 1.0)
+
+## Audio I/O
+
+### csoundGetSpin
+
+Get input audio buffer:
+
+```c
+MYFLT *csoundGetSpin(CSOUND *csound);
+```
+
+**Returns:** Pointer to input buffer (size: ksmps * nchnls_i)
+
+### csoundGetSpout
+
+Get output audio buffer:
+
+```c
+MYFLT *csoundGetSpout(CSOUND *csound);
+```
+
+**Returns:** Pointer to output buffer (size: ksmps * nchnls)
+
+**Example:**
+```c
+csoundStart(csound);
+uint32_t ksmps = csoundGetKsmps(csound);
+uint32_t nchnls = csoundGetChannels(csound, 0);
+MYFLT *spout = csoundGetSpout(csound);
+
+while (csoundPerformKsmps(csound) == 0) {
+    // Process output buffer
+    for (uint32_t i = 0; i < ksmps * nchnls; i++) {
+        float sample = (float)spout[i];
+        // Send to audio output
+    }
+}
+```
+
+## Channels
+
+### Channel types
+
+```c
+typedef enum {
+    CSOUND_CONTROL_CHANNEL = 1,
+    CSOUND_AUDIO_CHANNEL = 2,
+    CSOUND_STRING_CHANNEL = 3,
+    CSOUND_PVS_CHANNEL = 4,
+    CSOUND_VAR_CHANNEL = 5,
+    CSOUND_ARRAY_CHANNEL = 6,
+    CSOUND_CHANNEL_TYPE_MASK = 15,
+    CSOUND_INPUT_CHANNEL = 16,
+    CSOUND_OUTPUT_CHANNEL = 32
+} controlChannelType;
+```
+
+### csoundSetControlChannel
+
+Set a control channel value:
+
+```c
+void csoundSetControlChannel(CSOUND *csound, const char *name, MYFLT value);
+```
+
+**Example:**
+```c
+csoundSetControlChannel(csound, "volume", 0.8);
+csoundSetControlChannel(csound, "frequency", 440.0);
+```
+
+### csoundGetControlChannel
+
+Get a control channel value:
+
+```c
+MYFLT csoundGetControlChannel(CSOUND *csound, const char *name, int32_t *err);
+```
+
+**Parameters:**
+- `name` - Channel name
+- `err` - Optional pointer to error code (can be NULL)
+
+**Returns:** Channel value
+
+**Example:**
+```c
+int32_t err;
+MYFLT value = csoundGetControlChannel(csound, "output", &err);
+if (err == CSOUND_SUCCESS) {
+    printf("Output value: %f\n", value);
+}
+```
+
+### csoundGetChannelPtr
+
+Get direct pointer to channel:
+
+```c
+int32_t csoundGetChannelPtr(CSOUND *csound, void **ptr, 
+                            const char *name, int32_t type);
+```
+
+**Example:**
+```c
+MYFLT *channelPtr;
+int32_t result = csoundGetChannelPtr(csound, (void**)&channelPtr,
+                                     "volume", 
+                                     CSOUND_CONTROL_CHANNEL | CSOUND_INPUT_CHANNEL);
+if (result == CSOUND_SUCCESS) {
+    *channelPtr = 0.8;  // Direct write
+}
+```
+
+## Score events
+
+### csoundEventString
+
+Send a score event as string:
+
+```c
+void csoundEventString(CSOUND *csound, const char *event, int32_t async);
+```
+
+**Example:**
+```c
+csoundEventString(csound, "i 1 0 2 440", 0);
+```
+
+### csoundEvent
+
+Send a score event as array:
+
+```c
+void csoundEvent(CSOUND *csound, int32_t type, MYFLT *pfields, 
+                 int32_t numFields, int32_t async);
+```
+
+**Event types:**
+- `CS_INSTR_EVENT` - Instrument event (i-statement)
+- `CS_TABLE_EVENT` - Table event (f-statement)  
+- `CS_END_EVENT` - End event (e-statement)
+
+**Example:**
+```c
+MYFLT pfields[] = {1, 0, 2, 440}; // instr, start, dur, freq
+csoundEvent(csound, CS_INSTR_EVENT, pfields, 4, 0);
+```
+
+## Tables
+
+### csoundTableLength
+
+Get table length:
+
+```c
+int32_t csoundTableLength(CSOUND *csound, int32_t table);
+```
+
+**Returns:** Table length, or -1 if table doesn't exist
+
+### csoundGetTable
+
+Get pointer to table data:
+
+```c
+int32_t csoundGetTable(CSOUND *csound, MYFLT **tablePtr, int32_t table);
+```
+
+**Returns:** Table length on success, negative on error
+
+**Example:**
+```c
+MYFLT *table;
+int32_t len = csoundGetTable(csound, &table, 1);
+if (len > 0) {
+    for (int32_t i = 0; i < len; i++) {
+        printf("table[%d] = %f\n", i, table[i]);
+    }
+}
+```
+
+## Complete example
+
+```c
+#include <stdio.h>
+#include <csound/csound.h>
+
+int main() {
+    // Initialize and create instance
+    csoundInitialize(0);
+    CSOUND *csound = csoundCreate(NULL, NULL);
+    
+    if (csound == NULL) {
+        fprintf(stderr, "Failed to create Csound instance\n");
+        return 1;
+    }
+    
+    // Set options
+    csoundSetOption(csound, "-odac");  // Audio output
+    csoundSetOption(csound, "-m0");     // No messages
+    
+    // Compile orchestra
+    const char *orc = 
+        "sr = 44100\n"
+        "ksmps = 64\n"
+        "nchnls = 2\n"
+        "0dbfs = 1\n"
+        "\n"
+        "instr 1\n"
+        "  kfreq chnget \"frequency\"\n"
+        "  asig oscils 0.3, kfreq, 0\n"
+        "  outs asig, asig\n"
+        "endin\n";
+    
+    if (csoundCompileOrc(csound, orc, 0) != CSOUND_SUCCESS) {
+        fprintf(stderr, "Failed to compile orchestra\n");
+        csoundDestroy(csound);
+        return 1;
+    }
+    
+    // Start performance
+    if (csoundStart(csound) != CSOUND_SUCCESS) {
+        fprintf(stderr, "Failed to start Csound\n");
+        csoundDestroy(csound);
+        return 1;
+    }
+    
+    // Send score event
+    csoundEventString(csound, "i 1 0 3", 0);
+    
+    // Set initial frequency
+    csoundSetControlChannel(csound, "frequency", 440.0);
+    
+    // Performance loop
+    printf("Performing...\n");
+    int count = 0;
+    while (csoundPerformKsmps(csound) == 0) {
+        // Change frequency over time
+        if (count++ % 100 == 0) {
+            double freq = 440.0 + (count / 10.0);
+            csoundSetControlChannel(csound, "frequency", freq);
+        }
+    }
+    
+    // Cleanup
+    csoundDestroy(csound);
+    printf("Done\n");
+    
+    return 0;
+}
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="C++ bindings" icon="copyright" href="/bindings/cpp">
+    Object-oriented C++ interface
+  </Card>
+  <Card title="Performance thread" icon="thread" href="/bindings/cpp#performance-thread">
+    Threaded performance utilities
+  </Card>
+  <Card title="Python bindings" icon="python" href="/bindings/python">
+    Use Csound from Python
+  </Card>
+  <Card title="API reference" icon="book" href="https://csound.com/docs/api/">
+    Complete C API documentation
+  </Card>
+</CardGroup>

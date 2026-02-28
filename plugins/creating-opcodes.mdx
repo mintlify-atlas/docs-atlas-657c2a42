@@ -1,0 +1,455 @@
+---
+title: Creating opcodes
+description: Step-by-step guide to creating custom opcodes using the C++ plugin framework
+---
+
+This guide walks through creating a custom Csound opcode using the Plugin Opcode Framework.
+
+## Basic structure
+
+Every plugin opcode follows this basic pattern:
+
+```cpp
+#include <plugin.h>
+
+// 1. Define the opcode structure
+struct MyOpcode : csnd::Plugin<N_OUTPUTS, N_INPUTS> {
+  // 2. State variables (if needed)
+  MYFLT phase;
+  
+  // 3. Initialization
+  int32_t init() {
+    phase = 0;
+    return OK;
+  }
+  
+  // 4. Processing (k-rate or a-rate)
+  int32_t kperf() {
+    // Process at k-rate
+    return OK;
+  }
+  
+  int32_t aperf() {
+    // Process at a-rate
+    return OK;
+  }
+  
+  // 5. Cleanup (optional)
+  int32_t deinit() {
+    return OK;
+  }
+};
+
+// 6. Registration function
+#ifdef BUILD_PLUGINS
+#include <modload.h>
+void csnd::on_load(csnd::Csound *csound) {
+  csnd::plugin<MyOpcode>(csound, "myopcode", "k", "ki", csnd::thread::ik);
+}
+#else
+extern "C" int32_t myopcode_init_modules(CSOUND *csound) {
+  csnd::plugin<MyOpcode>((csnd::Csound *)csound, "myopcode", "k", "ki", 
+                         csnd::thread::ik);
+  return OK;
+}
+#endif
+```
+
+## Step-by-step tutorial
+
+Let's create a simple k-rate amplitude scaler opcode.
+
+<Steps>
+  <Step title="Set up the file structure">
+    Create a new file `myscaler.cpp` in the Opcodes directory:
+
+    ```cpp myscaler.cpp
+    #include <plugin.h>
+    ```
+  </Step>
+
+  <Step title="Define the opcode class">
+    Define a struct inheriting from `Plugin<1, 2>` (1 output, 2 inputs):
+
+    ```cpp myscaler.cpp
+    struct Scaler : csnd::Plugin<1, 2> {
+      // Will implement methods here
+    };
+    ```
+  </Step>
+
+  <Step title="Implement initialization">
+    Add the `init()` method:
+
+    ```cpp myscaler.cpp
+    int32_t init() {
+      // Validate input
+      if (inargs[1] < 0) {
+        return csound->init_error("Scale factor must be positive");
+      }
+      
+      // Initialize output if running only at i-time
+      if (!is_perf()) {
+        outargs[0] = inargs[0] * inargs[1];
+      }
+      
+      return OK;
+    }
+    ```
+  </Step>
+
+  <Step title="Implement k-rate processing">
+    Add the `kperf()` method:
+
+    ```cpp myscaler.cpp
+    int32_t kperf() {
+      // input * scale
+      outargs[0] = inargs[0] * inargs[1];
+      return OK;
+    }
+    ```
+  </Step>
+
+  <Step title="Register the opcode">
+    Add the registration function:
+
+    ```cpp myscaler.cpp
+    #ifdef BUILD_PLUGINS
+    #include <modload.h>
+    void csnd::on_load(csnd::Csound *csound) {
+      csnd::plugin<Scaler>(csound, "scaler", "k", "kk", csnd::thread::ik);
+    }
+    #else
+    extern "C" int32_t myscaler_init_modules(CSOUND *csound) {
+      csnd::plugin<Scaler>((csnd::Csound *)csound, "scaler", "k", "kk", 
+                           csnd::thread::ik);
+      return OK;
+    }
+    #endif
+    ```
+  </Step>
+
+  <Step title="Build and test">
+    Add your opcode to the build system (CMakeLists.txt) and compile. Test with:
+
+    ```csound
+    <CsoundSynthesizer>
+    <CsInstruments>
+    sr = 44100
+    kr = 4410
+    nchnls = 1
+    
+    instr 1
+      kval = 440
+      kscale = 2
+      kout scaler kval, kscale
+      printk2 kout  ; Should print 880
+    endin
+    </CsInstruments>
+    <CsScore>
+    i1 0 1
+    </CsScore>
+    </CsoundSynthesizer>
+    ```
+  </Step>
+</Steps>
+
+## Complete example
+
+Here's the complete `myscaler.cpp` file:
+
+```cpp myscaler.cpp
+#include <plugin.h>
+
+struct Scaler : csnd::Plugin<1, 2> {
+  int32_t init() {
+    if (inargs[1] < 0) {
+      return csound->init_error("Scale factor must be positive");
+    }
+    
+    if (!is_perf()) {
+      outargs[0] = inargs[0] * inargs[1];
+    }
+    
+    return OK;
+  }
+  
+  int32_t kperf() {
+    outargs[0] = inargs[0] * inargs[1];
+    return OK;
+  }
+};
+
+#ifdef BUILD_PLUGINS
+#include <modload.h>
+void csnd::on_load(csnd::Csound *csound) {
+  csnd::plugin<Scaler>(csound, "scaler", "k", "kk", csnd::thread::ik);
+}
+#else
+extern "C" int32_t myscaler_init_modules(CSOUND *csound) {
+  csnd::plugin<Scaler>((csnd::Csound *)csound, "scaler", "k", "kk", 
+                       csnd::thread::ik);
+  return OK;
+}
+#endif
+```
+
+## Advanced patterns
+
+### Working with arrays
+
+For array operations, use the `myfltvec` type:
+
+```cpp
+struct ArraySum : csnd::Plugin<1, 1> {
+  int32_t init() {
+    csnd::myfltvec &in = inargs.myfltvec_data(0);
+    
+    MYFLT sum = 0;
+    for (MYFLT val : in) {
+      sum += val;
+    }
+    
+    outargs[0] = sum;
+    return OK;
+  }
+  
+  int32_t kperf() {
+    return init();  // Same logic
+  }
+};
+
+// Register: ksum arraysum kin[]
+csnd::plugin<ArraySum>(csound, "arraysum", "k", "k[]", csnd::thread::ik);
+```
+
+### Audio-rate processing
+
+For a-rate opcodes, use `AudioSig` for sample-accurate processing:
+
+```cpp
+struct Gain : csnd::Plugin<1, 2> {
+  int32_t aperf() {
+    csnd::AudioSig out(this, outargs(0), true);  // true = reset
+    csnd::AudioSig in(this, inargs(0));
+    MYFLT gain = inargs[1];
+    
+    auto in_it = in.begin();
+    for (auto &s : out) {
+      s = *in_it * gain;
+      ++in_it;
+    }
+    
+    return OK;
+  }
+};
+
+// Register: aout gain ain, kgain
+csnd::plugin<Gain>(csound, "gain", "a", "ak", csnd::thread::ia);
+```
+
+### Using auxiliary memory
+
+For dynamic buffers, use `AuxMem<T>`:
+
+```cpp
+struct Delay : csnd::Plugin<1, 2> {
+  csnd::AuxMem<MYFLT> buffer;
+  uint32_t write_pos;
+  
+  int32_t init() {
+    MYFLT delay_sec = inargs[1];
+    uint32_t size = (uint32_t)(delay_sec * sr());
+    buffer.allocate(csound, size);
+    write_pos = 0;
+    return OK;
+  }
+  
+  int32_t aperf() {
+    csnd::AudioSig out(this, outargs(0), true);
+    csnd::AudioSig in(this, inargs(0));
+    uint32_t size = buffer.len();
+    
+    auto in_it = in.begin();
+    for (auto &s : out) {
+      // Write input to buffer
+      buffer[write_pos] = *in_it;
+      
+      // Read delayed output
+      s = buffer[(write_pos + 1) % size];
+      
+      write_pos = (write_pos + 1) % size;
+      ++in_it;
+    }
+    
+    return OK;
+  }
+};
+```
+
+### Variable argument count
+
+For opcodes with variable inputs, use `in_count()`:
+
+```cpp
+struct Sum : csnd::InPlug<64> {  // Max 64 args
+  static constexpr char const *otypes = "k";
+  static constexpr char const *itypes = "m";  // m = multiple args
+  
+  int32_t kperf() {
+    MYFLT sum = 0;
+    for (uint32_t i = 0; i < in_count(); i++) {
+      sum += args[i];
+    }
+    
+    args[0] = sum;  // InPlug uses 'args' not 'outargs'
+    return OK;
+  }
+};
+
+// Register using self-defined types
+csnd::plugin<Sum>(csound, "sum", csnd::thread::ik);
+```
+
+### Template-based opcodes
+
+Create families of opcodes using templates:
+
+```cpp
+template <MYFLT (*op)(MYFLT)>
+struct UnaryOp : csnd::Plugin<1, 1> {
+  int32_t kperf() {
+    outargs[0] = op(inargs[0]);
+    return OK;
+  }
+};
+
+// Helper functions
+inline MYFLT square(MYFLT x) { return x * x; }
+inline MYFLT cube(MYFLT x) { return x * x * x; }
+
+void csnd::on_load(csnd::Csound *csound) {
+  csnd::plugin<UnaryOp<square>>(csound, "square", "k", "k", csnd::thread::ik);
+  csnd::plugin<UnaryOp<cube>>(csound, "cube", "k", "k", csnd::thread::ik);
+}
+```
+
+## Best practices
+
+<AccordionGroup>
+  <Accordion title="Error handling">
+    Always validate inputs and return appropriate error codes:
+
+    ```cpp
+    int32_t init() {
+      if (inargs[0] <= 0) {
+        return csound->init_error("Frequency must be positive");
+      }
+      return OK;
+    }
+    
+    int32_t kperf() {
+      if (some_error_condition) {
+        return csound->perf_error("Runtime error occurred", this);
+      }
+      return OK;
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Memory management">
+    Use `AuxMem<T>` for Csound-managed memory, not `new`/`delete`:
+
+    ```cpp
+    // Good: Csound manages this
+    csnd::AuxMem<MYFLT> buffer;
+    buffer.allocate(csound, size);
+    
+    // Bad: Manual memory management can leak
+    MYFLT *buffer = new MYFLT[size];  // Don't do this!
+    ```
+  </Accordion>
+
+  <Accordion title="Sample-accurate processing">
+    For a-rate opcodes, use `AudioSig` to respect sample offsets:
+
+    ```cpp
+    int32_t aperf() {
+      csnd::AudioSig out(this, outargs(0), true);
+      csnd::AudioSig in(this, inargs(0));
+      
+      // Automatically handles offset and nsmps
+      for (auto it = in.begin(); it != in.end(); ++it) {
+        // Process only active samples
+      }
+      return OK;
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Thread specification">
+    Choose the correct thread type for your opcode:
+
+    - `thread::i` - Init-time only (no perf processing)
+    - `thread::k` - K-rate only (no init)
+    - `thread::ik` - Both init and k-rate
+    - `thread::a` - A-rate only (no init)
+    - `thread::ia` - Both init and a-rate
+  </Accordion>
+</AccordionGroup>
+
+## Build integration
+
+Add your opcode to `Opcodes/CMakeLists.txt`:
+
+```cmake
+make_plugin(myscaler myscaler.cpp)
+```
+
+Then rebuild Csound:
+
+```bash
+cd build
+cmake ..
+make
+```
+
+## Testing
+
+Create a test `.csd` file:
+
+```csound test_myscaler.csd
+<CsoundSynthesizer>
+<CsInstruments>
+sr = 44100
+kr = 4410
+nchnls = 1
+
+instr 1
+  kval line 100, p3, 1000
+  kout scaler kval, 2
+  printk2 kout
+endin
+</CsInstruments>
+<CsScore>
+i1 0 5
+</CsScore>
+</CsoundSynthesizer>
+```
+
+Run with:
+
+```bash
+csound test_myscaler.csd
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Examples" icon="book" href="/plugins/examples">
+    Study real-world opcode implementations
+  </Card>
+  <Card title="API reference" icon="code" href="/plugins/opcode-framework">
+    Complete framework documentation
+  </Card>
+</CardGroup>

@@ -1,0 +1,282 @@
+---
+title: iOS platform support
+description: Building and using Csound on iPhone and iPad
+---
+
+Csound for iOS provides a native framework (CsoundiOS.xcframework) for integrating Csound into iOS applications.
+
+## Requirements
+
+- macOS with Xcode
+- CMake
+- Bison 3.8+ (install via Homebrew: `brew install bison`)
+
+## Building the iOS framework
+
+### Step 1: Build libsndfile
+
+First, build libsndfile for iOS targets:
+
+```bash
+cd iOS
+chmod +x build_libsndfile.sh
+./build_libsndfile.sh
+```
+
+This builds libsndfile for both device and simulator architectures.
+
+### Step 2: Build Csound framework
+
+```bash
+./build.sh
+```
+
+The build script:
+1. Configures CMake with iOS-specific settings
+2. Builds for both arm64 (device) and x86_64 (simulator)
+3. Creates an XCFramework containing both architectures
+4. Copies the framework to `Csound-For-iOS/`
+
+### Step 3: Create release package
+
+```bash
+./release.sh
+```
+
+This creates a zip file containing the iOS build.
+
+## Build configuration
+
+The iOS build uses custom CMake configuration (`custom.cmake.ios`):
+
+```cmake
+cmake ../.. -G Xcode \
+  -DCMAKE_PREFIX_PATH="$PWD/.." \
+  -DUSE_GETTEXT=0 \
+  -DUSE_DOUBLE=0 \
+  -DBUILD_STATIC_LIBRARY=1 \
+  -DBUILD_RELEASE=0 \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DUSE_CURL=0 \
+  -DUSE_SSE=0 \
+  -DIOS=1 \
+  -DBUILD_TESTS=0 \
+  -DCUSTOM_CMAKE="../custom.cmake.ios" \
+  -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+```
+
+Key settings:
+- `USE_DOUBLE=0`: Uses 32-bit floats for better performance
+- `BUILD_STATIC_LIBRARY=1`: Builds static library
+- `DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"`: Supports both device and simulator
+
+## XCFramework structure
+
+The build produces `CsoundiOS.xcframework` with:
+
+```
+CsoundiOS.xcframework/
+├── ios-arm64/              # Device (iPhone/iPad)
+│   ├── Headers/
+│   │   ├── csound.h
+│   │   ├── iOSCsound.hpp
+│   │   └── ...
+│   └── libCsoundLib.a
+└── ios-arm64-simulator/    # Simulator
+    ├── Headers/
+    └── libCsoundLib.a
+```
+
+## Using in Xcode projects
+
+### Add the framework
+
+1. Drag `CsoundiOS.xcframework` into your Xcode project
+2. In target settings, add to "Frameworks, Libraries, and Embedded Content"
+3. Set to "Do Not Embed" (static framework)
+
+### Objective-C usage
+
+```objc
+#import <CsoundiOS/csound.h>
+#import <CsoundiOS/iOSCsound.hpp>
+
+// Create Csound instance
+CSDATA *csData = [[CSDATA alloc] init];
+
+// Compile CSD file
+NSString *csdPath = [[NSBundle mainBundle] pathForResource:@"test" ofType:@"csd"];
+[csData compileCSD:csdPath];
+
+// Start performance
+[csData play];
+```
+
+### Swift usage
+
+Create a bridging header:
+
+```objc
+// YourProject-Bridging-Header.h
+#import <CsoundiOS/csound.h>
+#import <CsoundiOS/iOSCsound.hpp>
+```
+
+Use in Swift:
+
+```swift
+import UIKit
+
+class AudioEngine {
+    var csound: OpaquePointer?
+    
+    func start() {
+        csound = csoundCreate(nil)
+        
+        // Compile CSD
+        if let csdPath = Bundle.main.path(forResource: "test", ofType: "csd") {
+            csoundCompileCsd(csound, csdPath)
+        }
+        
+        // Start performance
+        csoundStart(csound)
+        csoundPerform(csound)
+    }
+    
+    func stop() {
+        csoundStop(csound)
+        csoundDestroy(csound)
+    }
+}
+```
+
+## Audio session configuration
+
+Configure AVAudioSession for iOS:
+
+```swift
+import AVFoundation
+
+func setupAudioSession() {
+    let audioSession = AVAudioSession.sharedInstance()
+    
+    do {
+        try audioSession.setCategory(.playback, mode: .default)
+        try audioSession.setActive(true)
+    } catch {
+        print("Audio session error: \(error)")
+    }
+}
+```
+
+## Control channels
+
+Communicate with running Csound code:
+
+```objc
+// Set control channel
+csoundSetControlChannel(cs, "volume", 0.8);
+
+// Get control channel
+CSOUND *cs = [csData getCsound];
+double freq = csoundGetControlChannel(cs, "frequency", NULL);
+```
+
+## Real-time audio
+
+iOS uses CoreAudio for low-latency audio:
+
+```csd
+<CsOptions>
+-o dac  ; Output to audio device
+-i adc  ; Input from microphone (if needed)
+-b 256  ; Buffer size
+-B 1024 ; Output buffer size
+</CsOptions>
+```
+
+## MIDI support
+
+iOS supports CoreMIDI:
+
+```csd
+<CsOptions>
+-M0     ; Use default MIDI input
+-odac   ; Audio output
+</CsOptions>
+
+<CsInstruments>
+instr 1
+    ifreq cpsmidi
+    iamp ampmidi 1
+    asig oscil iamp, ifreq
+    outs asig, asig
+endin
+</CsInstruments>
+```
+
+## Example projects
+
+The `Csound-for-iOS` directory includes example projects:
+
+- **Objective-C example**: Basic Csound integration
+- **Swift example**: Modern Swift implementation
+
+Examine these for complete working implementations.
+
+## Performance considerations
+
+- Use `USE_DOUBLE=0` for better performance on mobile
+- Set appropriate buffer sizes (-b, -B options)
+- Test on actual devices, not just simulator
+- Monitor CPU usage in Instruments
+
+## Background audio
+
+Enable background audio in your app:
+
+1. Add "Audio, AirPlay, and Picture in Picture" capability
+2. Set audio session category to `.playback`
+3. Handle audio interruptions:
+
+```swift
+NotificationCenter.default.addObserver(
+    self,
+    selector: #selector(handleInterruption),
+    name: AVAudioSession.interruptionNotification,
+    object: nil
+)
+
+@objc func handleInterruption(notification: Notification) {
+    guard let userInfo = notification.userInfo,
+          let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
+          let type = AVAudioSession.InterruptionType(rawValue: typeValue) else {
+        return
+    }
+    
+    if type == .began {
+        // Pause Csound
+    } else if type == .ended {
+        // Resume Csound
+    }
+}
+```
+
+## Troubleshooting
+
+### Build fails with bison version error
+
+Install newer bison:
+
+```bash
+brew install bison
+brew link bison --force
+```
+
+### Framework not found
+
+Ensure the framework is in your project and properly linked in target settings.
+
+### Audio not playing
+
+Check AVAudioSession configuration and ensure audio session is active.

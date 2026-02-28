@@ -1,0 +1,368 @@
+---
+title: Installation
+description: Install Csound on macOS, Linux, Windows, iOS, Android, or WebAssembly
+---
+
+# Installation
+
+Csound can be installed on various platforms either through pre-built binaries or by building from source. This guide covers all major platforms and installation methods.
+
+## Requirements
+
+Before installing Csound, ensure you have:
+
+- A supported operating system (macOS, Linux, Windows, iOS, or Android)
+- For building from source: CMake, C compiler toolchain, Flex, and Bison
+
+<Note>
+  For most users, we recommend installing pre-built binaries. Building from source is only necessary if you need custom configurations or want to contribute to development.
+</Note>
+
+## Pre-built binaries
+
+<Tabs>
+  <Tab title="Download releases">
+    The easiest way to get started with Csound is to download pre-built installers:
+
+    <Steps>
+      <Step title="Visit the releases page">
+        Go to [github.com/csound/csound/releases](https://github.com/csound/csound/releases) to find the latest stable release.
+      </Step>
+
+      <Step title="Choose your platform">
+        Download the appropriate installer for your operating system:
+        - **macOS**: `.dmg` installer
+        - **Windows**: `.exe` installer
+        - **Linux**: `.deb` or `.rpm` packages
+      </Step>
+
+      <Step title="Install Csound">
+        Run the installer and follow the on-screen instructions.
+      </Step>
+
+      <Step title="Verify installation">
+        Open a terminal and run:
+        ```bash
+        csound --version
+        ```
+        You should see the Csound version information.
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="Beta builds">
+    For Csound 7.0 beta releases:
+
+    <Warning>
+      Beta releases are for testing and development. They may contain bugs and are not recommended for production use.
+    </Warning>
+
+    <Steps>
+      <Step title="Navigate to GitHub Actions">
+        Visit the [GitHub Actions page](https://github.com/csound/csound/actions/workflows/csound_builds.yml) for the Csound repository.
+      </Step>
+
+      <Step title="Select a build">
+        Choose the latest successful build from the develop branch.
+      </Step>
+
+      <Step title="Download artifacts">
+        Scroll to the bottom of the build page to find downloadable artifacts for macOS, iOS, and Windows.
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+## Building from source
+
+### Prerequisites
+
+All platforms require:
+
+<CodeGroup>
+```bash Core requirements
+# CMake build system
+# C compiler toolchain
+# Flex and bison (recent versions recommended)
+# - Bison 3.8+
+# - Flex 2.6+
+```
+
+```bash Optional dependencies
+# Libsndfile (for soundfile I/O)
+# Libsamplerate (for high-quality sample rate conversion)
+# Git (for source control)
+# C++ compiler (for some components)
+```
+</CodeGroup>
+
+### macOS
+
+<Tabs>
+  <Tab title="Using Homebrew">
+    The recommended method for macOS users:
+
+    ```bash
+    # Install dependencies
+    brew install --only-dependencies csound
+    brew install bison flex jack googletest
+
+    # Clone and build
+    git clone https://github.com/csound/csound.git
+    cd csound
+    cmake -B build -DCUSTOM_CMAKE="./platform/osx/custom-osx.cmake"
+    cmake --build build --config Release
+
+    # Install (requires sudo)
+    sudo cmake --build build --target install
+    ```
+
+    <Note>
+      The CsoundLib64 framework will be installed to `$HOME/Library/Frameworks`.
+    </Note>
+  </Tab>
+
+  <Tab title="With dependencies installed">
+    If you already have libsndfile and other dependencies:
+
+    ```bash
+    mkdir build
+    cd build
+    cmake ..
+    make -j 8
+    sudo make install
+    ```
+  </Tab>
+
+  <Tab title="Vanilla (no Homebrew)">
+    Build on macOS without any package manager:
+
+    ```bash
+    # Build libsndfile first
+    git clone https://github.com/libsndfile/libsndfile
+    cd libsndfile
+    cmake -B build -DENABLE_EXTERNAL_LIBS=0 -DENABLE_MPEG=0 \
+      -DCMAKE_INSTALL_PREFIX=../sndfile_install
+    cmake --build build
+    cmake --build build --target install
+    cd ..
+
+    # Build Csound
+    cmake -B build \
+      -DCMAKE_PREFIX_PATH="$PWD/sndfile_install" \
+      -DCMAKE_INSTALL_PREFIX="$PWD/csound_install" \
+      -DCS_FRAMEWORK_DEST="$PWD/csound_install"
+    cmake --build build --config Release
+    cmake --build build --target install
+    ```
+
+    This provides a fully functional Csound with CoreAudio, CoreMIDI, and libsndfile support.
+  </Tab>
+</Tabs>
+
+### Linux (Ubuntu/Debian)
+
+<Steps>
+  <Step title="Install dependencies">
+    ```bash
+    sudo apt-get update
+    sudo apt-get install cmake libsndfile1-dev libasound2-dev \
+      libjack-dev portaudio19-dev libportmidi-dev libpulse-dev \
+      swig liblua5.1-0-dev default-jdk libfltk1.1-dev \
+      libfluidsynth-dev liblo-dev fluid ladspa-sdk libpng-dev \
+      dssi-dev libstk0-dev libgmm++-dev bison flex libportsmf-dev \
+      libeigen3-dev libcunit1-dev gettext libsamplerate0-dev
+    ```
+  </Step>
+
+  <Step title="Clone and build">
+    ```bash
+    git clone https://github.com/csound/csound.git
+    cd csound
+    mkdir build
+    cd build
+    cmake ..
+    make
+    ```
+  </Step>
+
+  <Step title="Install">
+    ```bash
+    sudo make install
+    ```
+  </Step>
+</Steps>
+
+### Windows (Visual Studio)
+
+<Steps>
+  <Step title="Install prerequisites">
+    Open PowerShell as administrator:
+
+    ```powershell
+    # Install Chocolatey package manager first if needed
+    # Then install build tools
+    choco install -y cmake winflexbison3 innosetup git
+    ```
+  </Step>
+
+  <Step title="Clone repository">
+    ```powershell
+    git clone https://github.com/csound/csound.git
+    cd csound
+    ```
+  </Step>
+
+  <Step title="Initialize vcpkg">
+    ```powershell
+    git submodule init
+    git submodule update
+    .\vcpkg\bootstrap-vcpkg.bat
+    ```
+  </Step>
+
+  <Step title="Build Csound">
+    ```powershell
+    cmake -B build -S . -DUSE_VCPKG=1 \
+      -DCUSTOM_CMAKE="./platform/windows/Custom-vs.cmake" \
+      -DINSTALL_PYTHON_INTERFACE=OFF
+    cmake --build build --config Release
+    ```
+
+    <Note>
+      Remove `-DINSTALL_PYTHON_INTERFACE=OFF` if you have Python 3 installed and want Python bindings.
+    </Note>
+  </Step>
+</Steps>
+
+### iOS
+
+<Steps>
+  <Step title="Install Bison">
+    ```bash
+    brew install bison
+    ```
+  </Step>
+
+  <Step title="Build libsndfile">
+    ```bash
+    cd iOS
+    chmod +x build_libsndfile.sh
+    ./build_libsndfile.sh
+    ```
+  </Step>
+
+  <Step title="Build Csound for iOS">
+    ```bash
+    ./build.sh
+    ./release.sh
+    ```
+
+    The release script creates a zip file with the iOS build.
+  </Step>
+</Steps>
+
+### Android
+
+Android builds require the Android NDK and SDK. Refer to the Android directory in the source repository for detailed instructions.
+
+### WebAssembly
+
+Csound can be compiled to WebAssembly for use in web browsers. See the Emscripten directory in the source repository for build instructions.
+
+## CMake configuration options
+
+Customize your build with these common options:
+
+<ResponseField name="CMAKE_INSTALL_PREFIX" type="path" default="/usr/local">
+  Installation directory for Csound
+</ResponseField>
+
+<ResponseField name="USE_LIBSNDFILE" type="boolean" default="ON">
+  Enable libsndfile for soundfile I/O. Disable if libsndfile is not available.
+</ResponseField>
+
+<ResponseField name="USE_LIBSAMPLERATE" type="boolean" default="ON">
+  Use libsamplerate for high-quality sample rate conversion. When disabled, Csound uses linear interpolation.
+</ResponseField>
+
+<ResponseField name="BUILD_PLUGINS" type="boolean" default="OFF">
+  Build all external opcodes as plugin libraries.
+</ResponseField>
+
+<ResponseField name="DCUSTOM_CMAKE" type="path">
+  Path to a custom.cmake file with additional build options.
+</ResponseField>
+
+### View all options
+
+To see the complete list of CMake options:
+
+```bash
+cd build
+cmake -LAH
+```
+
+## Verifying your installation
+
+After installation, verify Csound is working:
+
+<CodeGroup>
+```bash Check version
+csound --version
+```
+
+```bash Test audio output
+# Create a simple test file
+echo '<CsoundSynthesizer>
+<CsOptions>
+-o dac
+</CsOptions>
+<CsInstruments>
+sr = 44100
+ksmps = 32
+nchnls = 2
+0dbfs = 1
+
+instr 1
+  asig oscil 0.3, 440
+  outs asig, asig
+endin
+</CsInstruments>
+<CsScore>
+i 1 0 2
+e
+</CsScore>
+</CsoundSynthesizer>' > test.csd
+
+csound test.csd
+```
+</CodeGroup>
+
+You should hear a 440 Hz sine wave tone for 2 seconds.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Command not found after installation">
+    Make sure the Csound binary is in your system PATH. On macOS and Linux, you may need to add `/usr/local/bin` to your PATH.
+  </Accordion>
+
+  <Accordion title="Audio device errors">
+    Csound needs access to audio devices. Check your system audio settings and ensure Csound has necessary permissions. Use `-o dac` for real-time output or `-o output.wav` to render to a file.
+  </Accordion>
+
+  <Accordion title="Missing opcodes or features">
+    Some opcodes require optional dependencies. Rebuild Csound with the required libraries installed, or check that plugin libraries are in the correct location.
+  </Accordion>
+
+  <Accordion title="Build errors on macOS">
+    Make sure you have the latest Xcode command-line tools installed: `xcode-select --install`. Also ensure you're using a recent version of Bison (not the system default).
+  </Accordion>
+</AccordionGroup>
+
+## Next steps
+
+<Card title="Quick start guide" icon="rocket" href="/quickstart">
+  Now that Csound is installed, create your first audio program
+</Card>

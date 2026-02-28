@@ -1,0 +1,277 @@
+---
+title: Compilation functions
+description: Functions for compiling orchestras, scores, and CSD files
+---
+
+## csoundCompile
+
+```c
+int32_t csoundCompile(CSOUND *csound, int32_t argc, const char **argv);
+```
+
+Compile Csound input files (orchestra, score, or CSD) as directed by command-line arguments, but does not perform them. Use `csoundStart()` and `csoundPerformKsmps()` to begin performance.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="argc" type="int32_t" required>
+  Number of arguments
+</ParamField>
+
+<ParamField path="argv" type="const char**" required>
+  Array of command-line argument strings
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  `CSOUND_SUCCESS` (0) on success, non-zero error code on failure
+</ResponseField>
+
+### Example
+
+```c
+CSO UND *csound = csoundCreate(NULL, NULL);
+
+const char *args[] = {"csound", "-odac", "myfile.csd"};
+int result = csoundCompile(csound, 3, args);
+
+if (!result) {
+    result = csoundStart(csound);
+    while (!result) {
+        result = csoundPerformKsmps(csound);
+    }
+}
+
+csoundDestroy(csound);
+```
+
+### Complete console application
+
+```c
+#include "csound.h"
+
+int main(int argc, char **argv) {
+    CSOUND *csound;
+    int32_t result, errs;
+    
+    csoundInitialize(CSOUNDINIT_NO_SIGNAL_HANDLER);
+    csound = csoundCreate(NULL, NULL);
+    
+    result = csoundCompile(csound, argc, (const char **)argv);
+    if (!result) {
+        result = csoundStart(csound);
+        while (!result) {
+            result = csoundPerformKsmps(csound);
+        }
+    }
+    
+    errs = csoundErrCnt(csound);
+    csoundDestroy(csound);
+    
+    return (result >= 0 ? errs : -result);
+}
+```
+
+## csoundCompileOrc
+
+```c
+int32_t csoundCompileOrc(CSOUND *csound, const char *str, int32_t async);
+```
+
+Parse and compile an orchestra from an ASCII string, evaluating any global space code (i-time only) in synchronous or asynchronous mode.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="str" type="const char*" required>
+  Orchestra code as a string
+</ParamField>
+
+<ParamField path="async" type="int32_t" required>
+  - `0` for synchronous compilation
+  - `1` for asynchronous compilation
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  `CSOUND_SUCCESS` (0) on success, non-zero error code on failure
+</ResponseField>
+
+### Example
+
+```c
+CSO UND *csound = csoundCreate(NULL, NULL);
+csoundSetOption(csound, "-odac");
+
+const char *orc = 
+    "instr 1\n"
+    "  a1 rand 0dbfs/4\n"
+    "  out a1\n"
+    "endin\n";
+
+int result = csoundCompileOrc(csound, orc, 0);
+if (result == CSOUND_SUCCESS) {
+    csoundStart(csound);
+    // Trigger the instrument
+    csoundEventString(csound, "i 1 0 1", 0);
+    // Perform...
+}
+```
+
+### Dynamic instrument loading
+
+```c
+// Compile initial orchestra
+csoundCompile(csound, argc, argv);
+csoundStart(csound);
+
+// Later, add a new instrument during performance
+const char *new_instr = 
+    "instr 100\n"
+    "  asig oscil 0.5, 440\n"
+    "  out asig\n"
+    "endin\n";
+
+csoundCompileOrc(csound, new_instr, 1); // async = 1
+```
+
+## csoundEvalCode
+
+```c
+MYFLT csoundEvalCode(CSOUND *csound, const char *str);
+```
+
+Parse and compile orchestra code synchronously, evaluating global space code and returning a value. The code can use the `return` opcode to return a value.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="str" type="const char*" required>
+  Orchestra code to evaluate
+</ParamField>
+
+<ResponseField name="return" type="MYFLT">
+  Value passed to `return` opcode, or `0` if evaluation failed
+</ResponseField>
+
+### Example
+
+```c
+CSO UND *csound = csoundCreate(NULL, NULL);
+csoundSetOption(csound, "-odac");
+csoundStart(csound);
+
+const char *code = 
+    "i1 = 2 + 2\n"
+    "return i1\n";
+
+MYFLT result = csoundEvalCode(csound, code);
+printf("Result: %f\n", result); // Prints: Result: 4.000000
+```
+
+### Calculator example
+
+```c
+MYFLT calculate(CSOUND *csound, const char *expression) {
+    char code[256];
+    snprintf(code, sizeof(code), "iresult = %s\nreturn iresult\n", expression);
+    return csoundEvalCode(csound, code);
+}
+
+MYFLT x = calculate(csound, "440 * 2");  // Returns 880.0
+MYFLT y = calculate(csound, "cpspch(8.09)"); // Returns 440.0
+```
+
+## csoundCompileCSD
+
+```c
+int32_t csoundCompileCSD(CSOUND *csound, const char *csd, 
+                         int32_t mode, int32_t async);
+```
+
+Compile a Csound input file (.csd) or a string containing CSD code.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="csd" type="const char*" required>
+  CSD filename (mode=0) or CSD code as string (mode=1)
+</ParamField>
+
+<ParamField path="mode" type="int32_t" required>
+  - `0` - `csd` is a filename
+  - `1` - `csd` contains full CSD code
+</ParamField>
+
+<ParamField path="async" type="int32_t" required>
+  - `0` for synchronous compilation
+  - `1` for asynchronous compilation
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  `CSOUND_SUCCESS` (0) on success, non-zero error code on failure
+</ResponseField>
+
+### Compilation before csoundStart
+
+When `csoundCompileCSD()` is called before `csoundStart()`, the `<CsOptions>` element is used, the `<CsScore>` section is preprocessed, and performance terminates when the score ends:
+
+```c
+CSO UND *csound = csoundCreate(NULL, NULL);
+
+csoundCompileCSD(csound, "mypiece.csd", 0, 0);
+csoundStart(csound);
+
+while (1) {
+    int32_t finished = csoundPerformKsmps(csound);
+    if (finished) break;
+}
+
+csoundDestroy(csound);
+```
+
+### Compilation after csoundStart
+
+When `csoundStart()` is called first, the `<CsOptions>` element is ignored, and the `<CsScore>` is dispatched as real-time events:
+
+```c
+CSO UND *csound = csoundCreate(NULL, NULL);
+
+csoundSetOption(csound, "-odac");
+csoundSetOption(csound, "-m0");
+csoundStart(csound);
+
+// Now load instruments and score events
+csoundCompileCSD(csound, "instruments.csd", 0, 0);
+
+while (1) {
+    csoundPerformKsmps(csound);
+    // Continue indefinitely...
+}
+```
+
+### Embedding CSD code
+
+```c
+const char *csd_code = 
+    "<CsoundSynthesizer>\n"
+    "<CsInstruments>\n"
+    "sr = 44100\n"
+    "ksmps = 64\n"
+    "nchnls = 2\n"
+    "0dbfs = 1\n"
+    "\n"
+    "instr 1\n"
+    "  asig oscil 0.5, 440\n"
+    "  outs asig, asig\n"
+    "endin\n"
+    "</CsInstruments>\n"
+    "<CsScore>\n"
+    "i 1 0 1\n"
+    "</CsScore>\n"
+    "</CsoundSynthesizer>\n";
+
+csoundCompileCSD(csound, csd_code, 1, 0); // mode=1 for string
+```

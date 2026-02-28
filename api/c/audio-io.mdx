@@ -1,0 +1,266 @@
+---
+title: Audio I/O functions
+description: Direct access to Csound's audio input and output buffers
+---
+
+## Overview
+
+Csound uses two primary audio buffers:
+
+- **spin** - Audio input buffer (software input)
+- **spout** - Audio output buffer (software output)
+
+These buffers allow external software to write audio into Csound before calling `csoundPerformKsmps()` and read audio from Csound afterward.
+
+## Buffer structure
+
+Each buffer contains audio data for one control period (ksmps frames). The buffers are interleaved for multi-channel audio:
+
+```
+Mono: [sample0, sample1, sample2, ..., sample(ksmps-1)]
+Stereo: [L0, R0, L1, R1, L2, R2, ..., L(ksmps-1), R(ksmps-1)]
+```
+
+Total buffer size = `ksmps * nchnls * sizeof(MYFLT)`
+
+## csoundGetSpin
+
+```c
+MYFLT *csoundGetSpin(CSOUND *csound);
+```
+
+Returns the address of the Csound audio input working buffer (spin). Write audio data to this buffer before calling `csoundPerformKsmps()`.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ResponseField name="return" type="MYFLT*">
+  Pointer to the input audio buffer
+</ResponseField>
+
+### Example: Writing mono input
+
+```c
+uint32_t ksmps = csoundGetKsmps(csound);
+MYFLT *spin = csoundGetSpin(csound);
+
+csoundStart(csound);
+
+while (!csoundPerformKsmps(csound)) {
+    // Write input audio samples
+    for (uint32_t i = 0; i < ksmps; i++) {
+        spin[i] = getNextInputSample();
+    }
+    
+    // Process audio
+    csoundPerformKsmps(csound);
+}
+```
+
+### Example: Writing stereo input
+
+```c
+uint32_t ksmps = csoundGetKsmps(csound);
+uint32_t nchnls_i = csoundGetChannels(csound, 1); // Input channels
+MYFLT *spin = csoundGetSpin(csound);
+
+csoundStart(csound);
+
+while (!csoundPerformKsmps(csound)) {
+    // Write interleaved stereo input
+    for (uint32_t i = 0; i < ksmps; i++) {
+        spin[i * nchnls_i + 0] = getLeftInputSample();
+        spin[i * nchnls_i + 1] = getRightInputSample();
+    }
+    
+    csoundPerformKsmps(csound);
+}
+```
+
+### Example: Audio callback integration
+
+```c
+typedef struct {
+    CSOUND *csound;
+    MYFLT *spin;
+    const MYFLT *spout;
+    uint32_t ksmps;
+    uint32_t in_channels;
+    uint32_t out_channels;
+} AudioContext;
+
+void audio_callback(float *input, float *output, 
+                   unsigned int frames, void *user_data) {
+    AudioContext *ctx = (AudioContext*)user_data;
+    
+    // Copy input to spin buffer
+    for (unsigned int i = 0; i < frames * ctx->in_channels; i++) {
+        ctx->spin[i] = (MYFLT)input[i];
+    }
+    
+    // Process audio
+    csoundPerformKsmps(ctx->csound);
+    
+    // Copy spout buffer to output
+    for (unsigned int i = 0; i < frames * ctx->out_channels; i++) {
+        output[i] = (float)ctx->spout[i];
+    }
+}
+```
+
+## csoundGetSpout
+
+```c
+const MYFLT *csoundGetSpout(CSOUND *csound);
+```
+
+Returns the address of the Csound audio output working buffer (spout). Read audio data from this buffer after calling `csoundPerformKsmps()`.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ResponseField name="return" type="const MYFLT*">
+  Pointer to the output audio buffer (read-only)
+</ResponseField>
+
+### Example: Reading mono output
+
+```c
+uint32_t ksmps = csoundGetKsmps(csound);
+const MYFLT *spout = csoundGetSpout(csound);
+
+csoundStart(csound);
+
+while (!csoundPerformKsmps(csound)) {
+    csoundPerformKsmps(csound);
+    
+    // Read output audio samples
+    for (uint32_t i = 0; i < ksmps; i++) {
+        writeOutputSample(spout[i]);
+    }
+}
+```
+
+### Example: Reading stereo output
+
+```c
+uint32_t ksmps = csoundGetKsmps(csound);
+uint32_t nchnls = csoundGetChannels(csound, 0); // Output channels
+const MYFLT *spout = csoundGetSpout(csound);
+
+csoundStart(csound);
+
+while (!csoundPerformKsmps(csound)) {
+    csoundPerformKsmps(csound);
+    
+    // Read interleaved stereo output
+    for (uint32_t i = 0; i < ksmps; i++) {
+        MYFLT left = spout[i * nchnls + 0];
+        MYFLT right = spout[i * nchnls + 1];
+        writeStereoPair(left, right);
+    }
+}
+```
+
+### Example: Recording to file
+
+```c
+#include <sndfile.h>
+
+typedef struct {
+    SF_INFO sfinfo;
+    SNDFILE *sndfile;
+} RecordContext;
+
+RecordContext* start_recording(CSOUND *csound, const char *filename) {
+    RecordContext *ctx = malloc(sizeof(RecordContext));
+    
+    ctx->sfinfo.samplerate = (int)csoundGetSr(csound);
+    ctx->sfinfo.channels = csoundGetChannels(csound, 0);
+    ctx->sfinfo.format = SF_FORMAT_WAV | SF_FORMAT_PCM_16;
+    
+    ctx->sndfile = sf_open(filename, SFM_WRITE, &ctx->sfinfo);
+    return ctx;
+}
+
+void record_loop(CSOUND *csound, RecordContext *rec) {
+    const MYFLT *spout = csoundGetSpout(csound);
+    uint32_t ksmps = csoundGetKsmps(csound);
+    uint32_t nchnls = csoundGetChannels(csound, 0);
+    uint32_t frame_size = ksmps * nchnls;
+    
+    csoundStart(csound);
+    
+    while (!csoundPerformKsmps(csound)) {
+        // Write audio frames to file
+        sf_writef_float(rec->sndfile, (const float*)spout, ksmps);
+    }
+    
+    sf_close(rec->sndfile);
+}
+```
+
+### Example: Amplitude monitoring
+
+```c
+MYFLT get_peak_amplitude(CSOUND *csound) {
+    const MYFLT *spout = csoundGetSpout(csound);
+    uint32_t ksmps = csoundGetKsmps(csound);
+    uint32_t nchnls = csoundGetChannels(csound, 0);
+    
+    MYFLT peak = 0.0;
+    for (uint32_t i = 0; i < ksmps * nchnls; i++) {
+        MYFLT abs_sample = fabs(spout[i]);
+        if (abs_sample > peak) {
+            peak = abs_sample;
+        }
+    }
+    
+    return peak;
+}
+
+// Usage
+csoundStart(csound);
+while (!csoundPerformKsmps(csound)) {
+    csoundPerformKsmps(csound);
+    
+    MYFLT peak = get_peak_amplitude(csound);
+    MYFLT dbfs = csoundGet0dBFS(csound);
+    MYFLT db = 20.0 * log10(peak / dbfs);
+    
+    printf("Peak: %.2f dB\n", db);
+}
+```
+
+## Important notes
+
+<Note>
+  The spin and spout pointers remain valid for the lifetime of the Csound instance but may be reallocated if `csoundReset()` is called.
+</Note>
+
+<Warning>
+  Buffer access is not thread-safe. Ensure synchronization if accessing buffers from multiple threads.
+</Warning>
+
+### Buffer timing
+
+The correct order of operations is:
+
+1. Write to `spin` buffer (input)
+2. Call `csoundPerformKsmps()`
+3. Read from `spout` buffer (output)
+4. Repeat
+
+### Zero initialization
+
+The `spin` buffer should be filled with data before each call to `csoundPerformKsmps()`. If no input is needed, fill with zeros:
+
+```c
+uint32_t ksmps = csoundGetKsmps(csound);
+uint32_t nchnls_i = csoundGetChannels(csound, 1);
+MYFLT *spin = csoundGetSpin(csound);
+
+memset(spin, 0, ksmps * nchnls_i * sizeof(MYFLT));
+```

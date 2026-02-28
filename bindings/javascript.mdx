@@ -1,0 +1,651 @@
+---
+title: JavaScript bindings
+description: Use Csound in the browser and Node.js with WebAssembly
+---
+
+Csound's JavaScript bindings allow you to run Csound in web browsers and Node.js environments using WebAssembly. This enables interactive audio applications, web-based DAWs, and real-time synthesis directly in the browser.
+
+## Installation
+
+### For browser
+
+Install via npm:
+
+```bash
+npm install @csound/browser
+```
+
+Or use a CDN:
+
+```html
+<script src="https://unpkg.com/@csound/browser"></script>
+```
+
+### For Node.js
+
+```bash
+npm install @csound/node
+```
+
+## Browser usage
+
+### Basic setup
+
+```javascript
+import { Csound } from '@csound/browser';
+
+async function initCsound() {
+    // Create Csound instance
+    const csound = await Csound();
+    
+    console.log('Csound initialized');
+    
+    // Get version
+    const version = await csound.getVersion();
+    console.log(`Csound version: ${version}`);
+    
+    return csound;
+}
+
+initCsound();
+```
+
+### Configuration options
+
+```javascript
+const csound = await Csound({
+    // Use existing AudioContext
+    audioContext: myAudioContext,
+    
+    // Audio I/O configuration
+    inputChannelCount: 2,
+    outputChannelCount: 2,
+    
+    // Auto-connect to audio destination
+    autoConnect: true,
+    
+    // Use Web Worker for better performance
+    useWorker: true,
+    
+    // Use SharedArrayBuffer if available
+    useSAB: true,
+    
+    // Load plugins
+    withPlugins: ['libfluidsynth.wasm']
+});
+```
+
+### Compiling and performing
+
+```javascript
+const csound = await Csound();
+
+// Define orchestra
+const orc = `
+sr = 44100
+ksmps = 64
+nchnls = 2
+0dbfs = 1
+
+instr 1
+    kfreq = p4
+    asig oscils 0.5, kfreq, 0
+    outs asig, asig
+endin
+`;
+
+// Compile orchestra
+await csound.compileOrc(orc);
+
+// Start audio processing
+await csound.start();
+
+// Send score event
+await csound.inputMessage('i 1 0 2 440');
+
+// Start performance (non-blocking)
+await csound.perform();
+
+console.log('Playing...');
+```
+
+### Loading CSD files
+
+```javascript
+const csound = await Csound();
+
+// Write CSD to virtual filesystem
+const csdContent = `
+<CsoundSynthesizer>
+<CsOptions>
+-odac
+</CsOptions>
+<CsInstruments>
+sr = 44100
+ksmps = 64
+nchnls = 2
+0dbfs = 1
+
+instr 1
+    asig oscils 0.5, 440, 0
+    outs asig, asig
+endin
+</CsInstruments>
+<CsScore>
+i 1 0 2
+</CsScore>
+</CsoundSynthesizer>
+`;
+
+await csound.fs.writeFile('myfile.csd', csdContent);
+
+// Compile and perform
+await csound.compileCSD('myfile.csd');
+await csound.start();
+await csound.perform();
+```
+
+## Channels
+
+### Control channels
+
+```javascript
+const csound = await Csound();
+
+const orc = `
+instr 1
+    kfreq chnget "frequency"
+    kvol chnget "volume"
+    asig oscils kvol, kfreq, 0
+    outs asig, asig
+    
+    kout = kfreq * 2
+    chnset kout, "output"
+endin
+`;
+
+await csound.compileOrc(orc);
+await csound.start();
+await csound.inputMessage('i 1 0 3600');
+await csound.perform();
+
+// Set control channels
+await csound.setControlChannel('frequency', 440);
+await csound.setControlChannel('volume', 0.8);
+
+// Read control channel
+const output = await csound.getControlChannel('output');
+console.log(`Output: ${output}`);
+
+// Update in real-time
+setInterval(async () => {
+    const freq = 440 + Math.random() * 100;
+    await csound.setControlChannel('frequency', freq);
+}, 100);
+```
+
+### String channels
+
+```javascript
+await csound.setStringChannel('message', 'Hello from JavaScript!');
+const msg = await csound.getStringChannel('message');
+console.log(msg);
+```
+
+## File system operations
+
+### Virtual file system
+
+Csound WebAssembly uses an in-memory virtual file system:
+
+```javascript
+const csound = await Csound();
+
+// Write file
+await csound.fs.writeFile('myfile.txt', 'Hello, Csound!');
+
+// Read file
+const content = await csound.fs.readFile('myfile.txt', { encoding: 'utf8' });
+console.log(content);
+
+// Check if file exists
+const exists = await csound.fs.exists('myfile.txt');
+console.log(`File exists: ${exists}`);
+
+// List directory
+const files = await csound.fs.readdir('/');
+console.log('Files:', files);
+
+// Create directory
+await csound.fs.mkdir('/samples');
+
+// Remove file
+await csound.fs.unlink('myfile.txt');
+```
+
+### Loading audio files
+
+```javascript
+// Fetch audio file
+const response = await fetch('sample.wav');
+const arrayBuffer = await response.arrayBuffer();
+const audioData = new Uint8Array(arrayBuffer);
+
+// Write to virtual filesystem
+await csound.fs.writeFile('sample.wav', audioData);
+
+// Use in Csound
+const orc = `
+instr 1
+    asig diskin2 "sample.wav", 1
+    outs asig, asig
+endin
+`;
+
+await csound.compileOrc(orc);
+await csound.start();
+await csound.inputMessage('i 1 0 5');
+await csound.perform();
+```
+
+## Audio input
+
+### Microphone input
+
+```javascript
+const csound = await Csound({
+    inputChannelCount: 2,
+    outputChannelCount: 2
+});
+
+// Request microphone access
+const stream = await navigator.mediaDevices.getUserMedia({ 
+    audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false
+    } 
+});
+
+// Enable audio input
+await csound.enableAudioInput(stream);
+
+// Process microphone input
+const orc = `
+sr = 44100
+ksmps = 64
+nchnls = 2
+nchnls_i = 2
+0dbfs = 1
+
+instr 1
+    ain1, ain2 ins
+    ; Add reverb
+    aL, aR reverbsc ain1, ain2, 0.85, 8000
+    outs aL, aR
+endin
+`;
+
+await csound.compileOrc(orc);
+await csound.start();
+await csound.inputMessage('i 1 0 3600');
+await csound.perform();
+```
+
+## MIDI support
+
+### MIDI input
+
+```javascript
+const csound = await Csound();
+
+const orc = `
+sr = 44100
+ksmps = 64
+nchnls = 2
+0dbfs = 1
+massign 0, 1
+
+instr 1
+    ifreq cpsmidi
+    iamp ampmidi 1
+    asig oscils iamp * 0.5, ifreq, 0
+    asig *= linsegr:a(0, 0.01, 1, 0.1, 0)
+    outs asig, asig
+endin
+`;
+
+await csound.compileOrc(orc);
+await csound.start();
+await csound.perform();
+
+// Request MIDI access
+const midiAccess = await navigator.requestMIDIAccess();
+
+// Handle MIDI messages
+midiAccess.inputs.forEach(input => {
+    input.onmidimessage = async (event) => {
+        const [status, data1, data2] = event.data;
+        
+        // Send to Csound
+        await csound.midiMessage(status, data1, data2);
+    };
+});
+```
+
+## Tables
+
+### Creating and reading tables
+
+```javascript
+const csound = await Csound();
+
+// Create table
+const orc = 'giSine ftgen 1, 0, 1024, 10, 1';
+await csound.compileOrc(orc);
+await csound.start();
+
+// Get table length
+const length = await csound.tableLength(1);
+console.log(`Table length: ${length}`);
+
+// Get table data
+const tableData = await csound.getTable(1);
+console.log('First 10 values:', tableData.slice(0, 10));
+
+// Visualize table
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const width = canvas.width;
+const height = canvas.height;
+
+ctx.clearRect(0, 0, width, height);
+ctx.beginPath();
+ctx.moveTo(0, height / 2);
+
+for (let i = 0; i < tableData.length; i++) {
+    const x = (i / tableData.length) * width;
+    const y = height / 2 - (tableData[i] * height / 2);
+    ctx.lineTo(x, y);
+}
+
+ctx.strokeStyle = '#4CAF50';
+ctx.lineWidth = 2;
+ctx.stroke();
+```
+
+### Writing tables
+
+```javascript
+// Create empty table
+await csound.compileOrc('giTable ftgen 1, 0, 1024, 7, 0, 1024, 0');
+await csound.start();
+
+// Generate data
+const size = 1024;
+const data = new Float64Array(size);
+for (let i = 0; i < size; i++) {
+    data[i] = Math.sin(2 * Math.PI * i / size);
+}
+
+// Write to table
+await csound.setTable(1, data);
+```
+
+## Event handling
+
+### Message callback
+
+```javascript
+const csound = await Csound();
+
+// Set message callback
+await csound.setMessageCallback((message) => {
+    console.log('Csound:', message);
+});
+
+await csound.compileOrc(`
+print "Hello from Csound!"
+print 123
+`);
+```
+
+### Performance events
+
+```javascript
+const csound = await Csound();
+
+// Listen for performance events
+csound.on('realtimePerformanceStarted', () => {
+    console.log('Performance started');
+});
+
+csound.on('realtimePerformanceEnded', () => {
+    console.log('Performance ended');
+});
+
+csound.on('realtimePerformancePaused', () => {
+    console.log('Performance paused');
+});
+
+csound.on('realtimePerformanceResumed', () => {
+    console.log('Performance resumed');
+});
+```
+
+## Complete example
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Csound WebAssembly Demo</title>
+</head>
+<body>
+    <h1>Interactive Synthesizer</h1>
+    
+    <button id="initBtn">Initialize Csound</button>
+    <button id="playBtn" disabled>Play Note</button>
+    
+    <div>
+        <label>Frequency: <span id="freqValue">440</span> Hz</label>
+        <input type="range" id="freqSlider" min="200" max="800" value="440" disabled>
+    </div>
+    
+    <div>
+        <label>Filter: <span id="filterValue">2000</span> Hz</label>
+        <input type="range" id="filterSlider" min="200" max="5000" value="2000" disabled>
+    </div>
+    
+    <div id="output"></div>
+    
+    <script type="module">
+        import { Csound } from 'https://unpkg.com/@csound/browser';
+        
+        let csound;
+        
+        const output = document.getElementById('output');
+        const initBtn = document.getElementById('initBtn');
+        const playBtn = document.getElementById('playBtn');
+        const freqSlider = document.getElementById('freqSlider');
+        const freqValue = document.getElementById('freqValue');
+        const filterSlider = document.getElementById('filterSlider');
+        const filterValue = document.getElementById('filterValue');
+        
+        function log(msg) {
+            output.innerHTML += msg + '<br>';
+            output.scrollTop = output.scrollHeight;
+        }
+        
+        initBtn.addEventListener('click', async () => {
+            log('Initializing Csound...');
+            
+            try {
+                csound = await Csound({
+                    autoConnect: true,
+                    useWorker: true
+                });
+                
+                const version = await csound.getVersion();
+                log(`Csound version: ${version}`);
+                
+                // Define orchestra
+                const orc = `
+                sr = 44100
+                ksmps = 64
+                nchnls = 2
+                0dbfs = 1
+                
+                instr 1
+                    kfreq chnget "freq"
+                    kfilt chnget "filter"
+                    
+                    asig vco2 0.5, kfreq
+                    asig moogladder asig, kfilt, 0.7
+                    asig *= linsegr:a(0, 0.01, 1, 0.1, 0)
+                    
+                    outs asig, asig
+                endin
+                `;
+                
+                await csound.compileOrc(orc);
+                await csound.start();
+                await csound.perform();
+                
+                // Set initial values
+                await csound.setControlChannel('freq', 440);
+                await csound.setControlChannel('filter', 2000);
+                
+                log('Csound ready!');
+                
+                // Enable controls
+                initBtn.disabled = true;
+                playBtn.disabled = false;
+                freqSlider.disabled = false;
+                filterSlider.disabled = false;
+                
+            } catch (error) {
+                log(`Error: ${error.message}`);
+            }
+        });
+        
+        playBtn.addEventListener('click', async () => {
+            await csound.inputMessage('i 1 0 1');
+            log('Playing note...');
+        });
+        
+        freqSlider.addEventListener('input', async (e) => {
+            const freq = parseFloat(e.target.value);
+            freqValue.textContent = freq;
+            if (csound) {
+                await csound.setControlChannel('freq', freq);
+            }
+        });
+        
+        filterSlider.addEventListener('input', async (e) => {
+            const filter = parseFloat(e.target.value);
+            filterValue.textContent = filter;
+            if (csound) {
+                await csound.setControlChannel('filter', filter);
+            }
+        });
+    </script>
+</body>
+</html>
+```
+
+## Node.js usage
+
+```javascript
+import { Csound } from '@csound/node';
+
+async function main() {
+    const csound = await Csound();
+    
+    const orc = `
+    sr = 44100
+    ksmps = 64
+    nchnls = 2
+    0dbfs = 1
+    
+    instr 1
+        asig oscils 0.5, 440, 0
+        outs asig, asig
+    endin
+    `;
+    
+    await csound.setOption('-odac');
+    await csound.compileOrc(orc);
+    await csound.start();
+    await csound.inputMessage('i 1 0 2');
+    await csound.perform();
+    
+    console.log('Done');
+}
+
+main();
+```
+
+## Performance considerations
+
+### Web Worker
+
+For best performance, use Web Workers:
+
+```javascript
+const csound = await Csound({
+    useWorker: true,  // Run in separate thread
+    useSAB: true      // Use SharedArrayBuffer if available
+});
+```
+
+### Buffer sizes
+
+Adjust buffer sizes for your use case:
+
+```javascript
+const orc = `
+sr = 44100
+ksmps = 128    ; Larger for lower CPU, higher latency
+nchnls = 2
+0dbfs = 1
+`;
+```
+
+### AudioContext
+
+Reuse existing AudioContext:
+
+```javascript
+const audioContext = new AudioContext({ latencyHint: 'interactive' });
+
+const csound = await Csound({
+    audioContext: audioContext
+});
+```
+
+## Browser compatibility
+
+- Chrome/Edge: Full support including SharedArrayBuffer
+- Firefox: Full support
+- Safari: Limited support (no SharedArrayBuffer in some versions)
+- Mobile browsers: Supported with limitations
+
+Always test across target browsers.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Examples" icon="code" href="https://github.com/csound/csound/tree/develop/wasm/browser/examples">
+    Browse JavaScript examples
+  </Card>
+  <Card title="Web IDE" icon="browser" href="https://ide.csound.com">
+    Try Csound in your browser
+  </Card>
+  <Card title="C API reference" icon="book" href="/bindings/c-api">
+    Understand the underlying API
+  </Card>
+  <Card title="npm package" icon="npm" href="https://www.npmjs.com/package/@csound/browser">
+    @csound/browser on npm
+  </Card>
+</CardGroup>

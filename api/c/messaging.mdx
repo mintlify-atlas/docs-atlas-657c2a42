@@ -1,0 +1,447 @@
+---
+title: Messaging and logging functions
+description: Functions for handling Csound messages, errors, and logging
+---
+
+## Overview
+
+Csound provides a flexible messaging system for displaying informational messages, warnings, and errors. You can customize message handling by setting callback functions or using the built-in message buffer.
+
+## Message attributes
+
+Messages include attribute flags that indicate message type and severity:
+
+- `CSOUNDMSG_ERROR` - Error message
+- `CSOUNDMSG_WARNING` - Warning message
+- `CSOUNDMSG_REALTIME` - Real-time message
+- Other types defined in `msg_attr.h`
+
+## csoundMessage
+
+```c
+void csoundMessage(CSOUND *csound, const char *format, ...);
+```
+
+Display an informational message using printf-style formatting.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="format" type="const char*" required>
+  Printf-style format string
+</ParamField>
+
+<ParamField path="..." type="variadic">
+  Format arguments
+</ParamField>
+
+### Example
+
+```c
+MYFLT sr = csoundGetSr(csound);
+csoundMessage(csound, "Sample rate: %.0f Hz\n", sr);
+csoundMessage(csound, "Processing %d channels\n", csoundGetChannels(csound, 0));
+```
+
+## csoundMessageS
+
+```c
+void csoundMessageS(CSOUND *csound, int32_t attr, 
+                    const char *format, ...);
+```
+
+Print a message with special attributes. With `attr=0`, this function is identical to `csoundMessage()`.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="attr" type="int32_t" required>
+  Message attribute flags (see `msg_attr.h`)
+</ParamField>
+
+<ParamField path="format" type="const char*" required>
+  Printf-style format string
+</ParamField>
+
+<ParamField path="..." type="variadic">
+  Format arguments
+</ParamField>
+
+### Example
+
+```c
+csoundMessageS(csound, CSOUNDMSG_WARNING, 
+               "Warning: Buffer size may be too small\n");
+csoundMessageS(csound, CSOUNDMSG_ERROR, 
+               "Error: Invalid parameter value: %d\n", param);
+```
+
+## csoundMessageV
+
+```c
+void csoundMessageV(CSOUND *csound, int32_t attr, 
+                    const char *format, va_list args);
+```
+
+Print a message using a `va_list` for arguments. Useful when wrapping Csound messaging in your own variadic functions.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="attr" type="int32_t" required>
+  Message attribute flags
+</ParamField>
+
+<ParamField path="format" type="const char*" required>
+  Printf-style format string
+</ParamField>
+
+<ParamField path="args" type="va_list" required>
+  Variable argument list
+</ParamField>
+
+### Example
+
+```c
+void my_log(CSOUND *csound, const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+    csoundMessageV(csound, 0, format, args);
+    va_end(args);
+}
+
+my_log(csound, "Custom log: value = %d\n", 42);
+```
+
+## Message callbacks
+
+## csoundSetMessageCallback
+
+```c
+void csoundSetMessageCallback(CSOUND *csound,
+    void (*callback)(CSOUND *, int32_t attr, 
+                     const char *format, va_list valist));
+```
+
+Set a function to be called by Csound to print messages. This callback is never called in `--realtime` mode.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="callback" type="function pointer" required>
+  Callback function with signature:
+  - `csound` - The Csound instance
+  - `attr` - Message attributes
+  - `format` - Printf format string
+  - `valist` - Variable arguments
+</ParamField>
+
+### Example: Custom message callback
+
+```c
+void my_message_callback(CSOUND *csound, int32_t attr, 
+                        const char *format, va_list args) {
+    // Filter out realtime messages
+    if ((attr & CSOUNDMSG_TYPE_MASK) != CSOUNDMSG_REALTIME) {
+        vfprintf(stderr, format, args);
+        fflush(stderr);
+    }
+}
+
+CSO UND *csound = csoundCreate(NULL, NULL);
+csoundSetMessageCallback(csound, my_message_callback);
+```
+
+### Example: Logging to file
+
+```c
+static FILE *log_file = NULL;
+
+void file_message_callback(CSOUND *csound, int32_t attr,
+                          const char *format, va_list args) {
+    if (log_file != NULL) {
+        vfprintf(log_file, format, args);
+        fflush(log_file);
+    }
+}
+
+int main() {
+    log_file = fopen("csound.log", "w");
+    
+    CSOUND *csound = csoundCreate(NULL, NULL);
+    csoundSetMessageCallback(csound, file_message_callback);
+    
+    // Use Csound...
+    
+    csoundDestroy(csound);
+    fclose(log_file);
+}
+```
+
+## csoundSetMessageStringCallback
+
+```c
+void csoundSetMessageStringCallback(CSOUND *csound,
+    void (*callback)(CSOUND *csound, int32_t attr, const char *str));
+```
+
+Set an alternative message callback with a simpler signature that receives the complete formatted string. This callback can be used in `--realtime` mode and is cleared after `csoundReset()`.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="callback" type="function pointer" required>
+  Callback function receiving the formatted message string
+</ParamField>
+
+### Example
+
+```c
+void string_callback(CSOUND *csound, int32_t attr, const char *str) {
+    printf("[Csound] %s", str);
+}
+
+csoundSetMessageStringCallback(csound, string_callback);
+```
+
+## csoundSetDefaultMessageCallback
+
+```c
+void csoundSetDefaultMessageCallback(
+    void (*callback)(CSOUND *, int32_t attr, 
+                     const char *format, va_list valist));
+```
+
+Set a default message callback for all Csound instances. This is a global setting.
+
+<ParamField path="callback" type="function pointer" required>
+  Default callback function for all instances
+</ParamField>
+
+### Example
+
+```c
+void global_message_callback(CSOUND *csound, int32_t attr,
+                            const char *format, va_list args) {
+    fprintf(stderr, "[CSOUND] ");
+    vfprintf(stderr, format, args);
+}
+
+int main() {
+    // Set before creating any instances
+    csoundSetDefaultMessageCallback(global_message_callback);
+    
+    CSOUND *csound = csoundCreate(NULL, NULL);
+    // ... use csound
+}
+```
+
+## Message buffer
+
+## csoundCreateMessageBuffer
+
+```c
+void csoundCreateMessageBuffer(CSOUND *csound, int32_t toStdOut);
+```
+
+Create a buffer for storing messages printed by Csound. Should be called after creating a Csound instance and destroyed before deleting the instance.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="toStdOut" type="int32_t" required>
+  If non-zero, messages are also printed to stdout/stderr in addition to being buffered
+</ParamField>
+
+<Warning>
+  Using the message buffer sets the internal message callback, so `csoundSetMessageCallback()` should not be called after creating the message buffer.
+</Warning>
+
+## csoundGetFirstMessage
+
+```c
+const char* csoundGetFirstMessage(CSOUND *csound);
+```
+
+Returns the first message from the buffer.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ResponseField name="return" type="const char*">
+  Pointer to the message string, or `NULL` if buffer is empty
+</ResponseField>
+
+## csoundGetFirstMessageAttr
+
+```c
+int32_t csoundGetFirstMessageAttr(CSOUND *csound);
+```
+
+Returns the attribute parameter of the first message in the buffer.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  Message attributes (see `msg_attr.h`)
+</ResponseField>
+
+## csoundPopFirstMessage
+
+```c
+void csoundPopFirstMessage(CSOUND *csound);
+```
+
+Remove the first message from the buffer.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+## csoundGetMessageCnt
+
+```c
+int32_t csoundGetMessageCnt(CSOUND *csound);
+```
+
+Returns the number of pending messages in the buffer.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  Number of messages in the buffer
+</ResponseField>
+
+## csoundDestroyMessageBuffer
+
+```c
+void csoundDestroyMessageBuffer(CSOUND *csound);
+```
+
+Release all memory used by the message buffer.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+### Example: Using message buffer
+
+```c
+CSO UND *csound = csoundCreate(NULL, NULL);
+
+// Create message buffer (don't print to stdout)
+csoundCreateMessageBuffer(csound, 0);
+
+// Compile and run
+csoundCompile(csound, argc, argv);
+csoundStart(csound);
+
+for (int i = 0; i < 10; i++) {
+    csoundPerformKsmps(csound);
+    
+    // Process all buffered messages
+    while (csoundGetMessageCnt(csound) > 0) {
+        const char *msg = csoundGetFirstMessage(csound);
+        int32_t attr = csoundGetFirstMessageAttr(csound);
+        
+        printf("Message [attr=%d]: %s", attr, msg);
+        csoundPopFirstMessage(csound);
+    }
+}
+
+csoundDestroyMessageBuffer(csound);
+csoundDestroy(csound);
+```
+
+## Message level control
+
+## csoundGetMessageLevel
+
+```c
+int32_t csoundGetMessageLevel(CSOUND *csound);
+```
+
+Returns the current message level (from 0 to 231).
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  Current message level
+</ResponseField>
+
+## csoundSetMessageLevel
+
+```c
+void csoundSetMessageLevel(CSOUND *csound, int32_t messageLevel);
+```
+
+Set the message level (from 0 to 231). Higher values produce more verbose output.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="messageLevel" type="int32_t" required>
+  New message level (0-231)
+</ParamField>
+
+### Example
+
+```c
+// Suppress most messages
+csoundSetMessageLevel(csound, 0);
+
+// Enable verbose output
+csoundSetMessageLevel(csound, 7);
+```
+
+## Error counting
+
+## csoundErrCnt
+
+```c
+int32_t csoundErrCnt(CSOUND *csound);
+```
+
+Returns the total error count of the current performance.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  Number of errors encountered
+</ResponseField>
+
+### Example
+
+```c
+int result = csoundCompile(csound, argc, argv);
+if (!result) {
+    result = csoundStart(csound);
+    while (!result) {
+        result = csoundPerformKsmps(csound);
+    }
+}
+
+int32_t errors = csoundErrCnt(csound);
+if (errors > 0) {
+    printf("Performance completed with %d errors\n", errors);
+}
+
+csoundDestroy(csound);
+return (result >= 0 ? errors : -result);
+```

@@ -1,0 +1,365 @@
+---
+title: Migrating from Csound 6 to 7
+description: A comprehensive guide for migrating your Csound projects and API code from version 6.x to 7.0
+---
+
+This guide outlines the most important issues when migrating Csound API code from 6.x to 7.0. It focuses on breaking changes and API modifications rather than new functionality.
+
+## Overview
+
+The changes in the Csound 7 API were motivated by two primary goals:
+
+- **Simplification** - Unused or rarely used parts of the API have been removed
+- **Consolidation** - Duplication of functionality and similar-but-not-quite interfaces have been eliminated
+
+<Warning>
+Csound 7 includes breaking changes that will require code modifications. Review this guide carefully before upgrading.
+</Warning>
+
+## Major architectural changes
+
+### Removal of libcsnd
+
+In Csound 6.x, a separate library called `libcsnd` existed mainly to support wrapping the C API in other languages. This has been removed in Csound 7.
+
+The C++ `CsoundPerformanceThread` class has been incorporated into the main Csound library, with a C-language interface provided in the public headers.
+
+### Required workflow change
+
+In Csound 6.x, `csoundCompile()` internally called `csoundStart()`. This behavior has been discontinued.
+
+<Warning>
+`csoundStart()` is now required to be called explicitly in all cases to start the Csound engine.
+</Warning>
+
+**Before (Csound 6):**
+
+```c
+csoundCompile(csound, argc, argv);
+while (csoundPerformKsmps(csound) == 0) {
+    // Processing
+}
+```
+
+**After (Csound 7):**
+
+```c
+csoundCompile(csound, argc, argv);
+csoundStart(csound);  // Now required!
+while (csoundPerformKsmps(csound) == 0) {
+    // Processing
+}
+```
+
+## Header file reorganization
+
+Many functions have been moved from `csound.h` to specialized header files for better organization:
+
+- **csound_compiler.h** - Compiler and parsing functions
+- **csound_server.h** - UDP server functions
+- **csound_files.h** - File I/O callbacks
+- **csound_graph_displays.h** - Graph and display functions
+- **csound_threads.h** - Threading and concurrency functions
+- **csound_misc.h** - Miscellaneous utilities
+- **csound_circular_buffer.h** - Circular buffer functions
+
+If you're using functions that have been moved, include the appropriate header files in your code.
+
+## Function consolidation
+
+Many functions with separate synchronous and asynchronous variants have been consolidated into single functions with an `async` parameter.
+
+### Compilation functions
+
+**Before (Csound 6):**
+
+```c
+csoundCompileOrc(csound, orc_code);
+csoundCompileOrcAsync(csound, orc_code);
+
+csoundCompileTree(csound, tree);
+csoundCompileTreeAsync(csound, tree);
+```
+
+**After (Csound 7):**
+
+```c
+csoundCompileOrc(csound, orc_code, 0);  // Synchronous
+csoundCompileOrc(csound, orc_code, 1);  // Asynchronous
+
+csoundCompileTree(csound, tree, 0);  // Synchronous
+csoundCompileTree(csound, tree, 1);  // Asynchronous
+```
+
+Note: `csoundParseOrc()`, `csoundDeleteTree()`, and `csoundCompileTree()` have been moved to `csound_compiler.h`.
+
+### CSD file compilation
+
+**Before (Csound 6):**
+
+```c
+csoundCompileCsd(csound, "file.csd");
+csoundCompileCsdText(csound, csd_string);
+```
+
+**After (Csound 7):**
+
+```c
+csoundCompileCSD(csound, "file.csd", 0);    // Mode 0: filename
+csoundCompileCSD(csound, csd_string, 1);    // Mode 1: code string
+```
+
+Note the uppercase `CSD` in the function name.
+
+### Score and event functions
+
+**Before (Csound 6):**
+
+```c
+csoundReadScore(csound, score_string);
+csoundReadScoreAsync(csound, score_string);
+csoundInputMessage(csound, message);
+csoundInputMessageAsync(csound, message);
+```
+
+**After (Csound 7):**
+
+```c
+csoundEventString(csound, event_string, 0);  // Synchronous
+csoundEventString(csound, event_string, 1);  // Asynchronous
+```
+
+### Score events
+
+**Before (Csound 6):**
+
+```c
+csoundScoreEvent(csound, 'i', pfields, numFields);
+csoundScoreEventAsync(csound, 'i', pfields, numFields);
+csoundScoreEventAbsolute(csound, 'i', pfields, numFields, time_ofs);
+csoundScoreEventAbsoluteAsync(csound, 'i', pfields, numFields, time_ofs);
+```
+
+**After (Csound 7):**
+
+```c
+csoundEvent(csound, CS_INSTR_EVENT, pfields, numFields, 0);  // Synchronous
+csoundEvent(csound, CS_INSTR_EVENT, pfields, numFields, 1);  // Asynchronous
+```
+
+Event types are now constants:
+- `CS_INSTR_EVENT` - Instrument event (i-statement)
+- `CS_TABLE_EVENT` - Function table event (f-statement)
+- `CS_END_EVENT` - End event (e-statement)
+
+### Table operations
+
+**Before (Csound 6):**
+
+```c
+csoundTableCopyOut(csound, table, dest);
+csoundTableCopyOutAsync(csound, table, dest);
+csoundTableCopyIn(csound, table, src);
+csoundTableCopyInAsync(csound, table, src);
+```
+
+**After (Csound 7):**
+
+These functions have been removed. Use `csoundGetTable()` to get a pointer to the table data and access it directly:
+
+```c
+MYFLT *table_ptr;
+int table_len = csoundGetTable(csound, &table_ptr, table_num);
+if (table_len > 0) {
+    // Read/write table data directly via table_ptr
+}
+```
+
+## Instance creation changes
+
+**Before (Csound 6):**
+
+```c
+csoundSetOpcodedir("/path/to/opcodes");
+CSOUND *csound = csoundCreate(hostData);
+```
+
+**After (Csound 7):**
+
+```c
+CSOUND *csound = csoundCreate(hostData, "/path/to/opcodes");
+```
+
+The `csoundSetOpcodedir()` function has been removed, and the functionality has been consolidated into `csoundCreate()` as a second parameter.
+
+## Parameter handling
+
+**Before (Csound 6):**
+
+```c
+CSOUND_PARAMETERS params;
+csoundGetParameters(csound, &params);
+params.sample_rate = 48000;
+csoundSetParameters(csound, &params);
+```
+
+**After (Csound 7):**
+
+```c
+const OPARMS *params = csoundGetParams(csound);
+// Parameters are read-only
+// Modify via command-line options, CsOptions, or csoundSetOption()
+csoundSetOption(csound, "-r 48000");
+```
+
+Configuration parameters can now only be modified via:
+- Command-line options
+- CsOptions in CSD files
+- `csoundSetOption()` function
+
+Note: `csoundSetOption()` can now take any number of options in command-line format and can include spaces.
+
+## Channel functions
+
+### Getting channel count
+
+**Before (Csound 6):**
+
+```c
+uint32_t output_channels = csoundGetNchnls(csound);
+uint32_t input_channels = csoundGetNchnlsInput(csound);
+```
+
+**After (Csound 7):**
+
+```c
+uint32_t output_channels = csoundGetChannels(csound, 0);
+uint32_t input_channels = csoundGetChannels(csound, 1);
+```
+
+### Channel pointers
+
+**Before (Csound 6):**
+
+```c
+MYFLT *channel_ptr;
+csoundGetChannelPtr(csound, &channel_ptr, "myChannel", CSOUND_CONTROL_CHANNEL);
+```
+
+**After (Csound 7):**
+
+```c
+void *channel_ptr;
+csoundGetChannelPtr(csound, &channel_ptr, "myChannel", CSOUND_CONTROL_CHANNEL);
+```
+
+The function signature has changed to use `void **` instead of `MYFLT **`.
+
+### Channel locking
+
+**Before (Csound 6):**
+
+```c
+int *lock = csoundGetChannelLock(csound, "myChannel");
+// Manual locking required
+```
+
+**After (Csound 7):**
+
+```c
+csoundLockChannel(csound, "myChannel");
+// Access channel data
+csoundUnlockChannel(csound, "myChannel");
+```
+
+## Audio I/O changes
+
+### Host-implemented audio I/O
+
+**Before (Csound 6):**
+
+```c
+csoundSetHostImplementedAudioIO(csound, 1, bufferSize);
+```
+
+**After (Csound 7):**
+
+```c
+csoundSetHostAudioIO(csound);
+```
+
+The buffer size parameter has been removed.
+
+### MIDI I/O
+
+**Before (Csound 6):**
+
+```c
+csoundSetHostImplementedMIDIIO(csound, 1);
+```
+
+**After (Csound 7):**
+
+```c
+csoundSetHostMIDIIO(csound);
+```
+
+### Spin/Spout buffers
+
+**Before (Csound 6):**
+
+```c
+MYFLT *spout = csoundGetSpout(csound);
+spout[0] = value;  // Modify output
+
+csoundAddSpinSample(csound, frame, channel, sample);
+csoundSetSpinSample(csound, frame, channel, sample);
+```
+
+**After (Csound 7):**
+
+```c
+const MYFLT *spout = csoundGetSpout(csound);  // Now const
+// Get spin pointer and access directly
+MYFLT *spin = csoundGetSpin(csound);
+spin[frame * channels + channel] = sample;
+```
+
+The `csoundGetSpout()` function now returns a const pointer. The `csoundAddSpinSample()` and `csoundSetSpinSample()` functions have been removed - access spin/spout data directly via pointers.
+
+## Opcode development
+
+**Before (Csound 6):**
+
+```c
+csoundAppendOpcode(csound, "myop", dsblksiz, flags, thread,
+                   "a", "kk", init_func, perf_func, NULL);
+```
+
+**After (Csound 7):**
+
+```c
+csoundAppendOpcode(csound, "myop", dsblksiz, flags,
+                   "a", "kk", init_func, perf_func, deinit_func);
+```
+
+The `thread` argument has been removed.
+
+## C++ interface changes
+
+The header file `csound_threaded.hpp` has been removed as it duplicates (in a limited way) multithreading that is now built into the Csound library.
+
+Use the new interfaces:
+- **csPerfThread.h** - C interface for performance thread
+- **csPerfThread.hpp** - C++ interface for performance thread
+
+All changes to `csound.h` functions have been propagated to the `Csound` class in `csound.hpp`.
+
+## Next steps
+
+After updating your code for the main API changes:
+
+1. Review the [API changes](/guides/migration/api-changes) documentation for a complete list of modified functions
+2. Check the [deprecations](/guides/migration/deprecations) page for removed features
+3. Update your build system to link against the new header files if needed
+4. Test thoroughly, especially code that uses channels, events, and audio I/O

@@ -1,0 +1,270 @@
+---
+title: macOS build instructions
+description: Build Csound from source on macOS
+---
+
+## Prerequisites
+
+Before building Csound on macOS, ensure you have:
+
+- Xcode Command Line Tools or full Xcode
+- CMake
+- Newer versions of Bison and Flex (macOS includes older versions)
+
+See [Build requirements](/building/requirements) for complete details.
+
+## Method 1: Using Homebrew
+
+This is the recommended approach for most users.
+
+<Steps>
+  <Step title="Install dependencies">
+    Install all required dependencies using Homebrew:
+
+    ```bash
+    brew install bison flex jack googletest
+    brew install libogg flac lame libvorbis mpg123 opus libsndfile \
+      portaudio libsamplerate liblo portmidi
+    ```
+  </Step>
+
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/csound/csound.git
+    cd csound
+    ```
+  </Step>
+
+  <Step title="Configure the build">
+    ```bash
+    cmake -B build -DCUSTOM_CMAKE="./platform/osx/custom-osx.cmake"
+    ```
+  </Step>
+
+  <Step title="Build Csound">
+    ```bash
+    cmake --build build --config Release
+    ```
+
+    For faster builds, use multiple cores:
+    ```bash
+    make -j 8
+    ```
+  </Step>
+
+  <Step title="Install">
+    Install the software (requires super-user access):
+
+    ```bash
+    sudo make install
+    ```
+
+    The CsoundLib64 (or CsoundLib) framework is installed in `$HOME/Library/Frameworks`.
+  </Step>
+</Steps>
+
+## Method 2: With dependencies installed manually
+
+If you have libsndfile and other dependencies installed manually:
+
+<Steps>
+  <Step title="Create build directory">
+    From the top-level sources directory:
+
+    ```bash
+    mkdir build
+    cd build
+    ```
+  </Step>
+
+  <Step title="Configure and build">
+    ```bash
+    cmake ..
+    make -j 8
+    ```
+  </Step>
+
+  <Step title="Install">
+    ```bash
+    sudo make install
+    ```
+  </Step>
+</Steps>
+
+## Method 3: Vanilla build (no Homebrew)
+
+Build Csound with no dependencies installed and no Homebrew:
+
+<Steps>
+  <Step title="Build libsndfile">
+    ```bash
+    git clone https://github.com/libsndfile/libsndfile
+    cd libsndfile
+    cmake -B build -DENABLE_EXTERNAL_LIBS=0 -DENABLE_MPEG=0 \
+      -DCMAKE_INSTALL_PREFIX=../sndfile_install
+    cmake --build build
+    cmake --build build --target install
+    cd ..
+    ```
+  </Step>
+
+  <Step title="Configure Csound">
+    ```bash
+    cmake -B build \
+      -DCMAKE_PREFIX_PATH="$PWD/sndfile_install" \
+      -DCMAKE_INSTALL_PREFIX="$PWD/csound_install" \
+      -DCS_FRAMEWORK_DEST="$PWD/csound_install"
+    ```
+  </Step>
+
+  <Step title="Build and install">
+    ```bash
+    cmake --build build --config Release
+    cmake --build build --target install
+    ```
+
+    This will install in the `csound_install` subdirectory of the sources tree.
+  </Step>
+</Steps>
+
+Csound will be fully functional, with CoreAudio and CoreMIDI support, and libsndfile (statically linked) and all its command-line programs.
+
+## Method 4: Universal binary for distribution
+
+To build a universal binary (arm64 + x86_64) for distribution:
+
+<Steps>
+  <Step title="Build dependencies as universal binaries">
+    Build libsndfile, portmidi, portaudio, libsamplerate, and liblo with both architectures:
+
+    ```bash
+    # Build libsndfile
+    cd platform/osx
+    chmod +x build_libsndfile.sh
+    ./build_libsndfile.sh
+    cd ../..
+
+    # Build portmidi
+    git clone https://github.com/PortMidi/portmidi.git
+    cd portmidi
+    cmake -B build -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+      -DCMAKE_INSTALL_PREFIX=../portmidi_install
+    cmake --build build
+    cmake --build build --target install
+    cd ..
+
+    # Build portaudio
+    git clone https://github.com/PortAudio/portaudio.git
+    cd portaudio
+    cmake -B build -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+      -DCMAKE_INSTALL_PREFIX=../portaudio_install
+    cmake --build build
+    cmake --build build --target install
+    cd ..
+
+    # Build libsamplerate
+    git clone https://github.com/libsndfile/libsamplerate
+    cd libsamplerate
+    cmake -B build -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+      -DCMAKE_INSTALL_PREFIX=../samplerate_install
+    cmake --build build
+    cmake --build build --target install
+    cd ..
+
+    # Build liblo
+    git clone https://github.com/radarsat1/liblo
+    cd liblo
+    cmake ./cmake -B build -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+      -DCMAKE_INSTALL_PREFIX=../liblo_install
+    cmake --build build
+    cmake --build build --target install
+    cd ..
+    ```
+  </Step>
+
+  <Step title="Install bison and flex">
+    ```bash
+    brew install bison flex
+    ```
+  </Step>
+
+  <Step title="Configure Csound as universal binary">
+    ```bash
+    cmake -B build -DCMAKE_BUILD_TYPE="Release" -DUSE_GETTEXT=0 \
+      -DCMAKE_PREFIX_PATH="$PWD/platform/osx/libsndfile_build/dependencies;$PWD/portmidi_install;$PWD/portaudio_install;$PWD/samplerate_install;$PWD/liblo_install" \
+      -DCMAKE_INSTALL_PREFIX="$PWD/csound_install" \
+      -DCS_FRAMEWORK_DEST="$PWD/csound_install" \
+      -DCS_OPCODE_DIR="/Applications/Csound/CsoundLib64.framework/Resources/Opcodes64/" \
+      -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+      -DUSE_MP3=1 -DUSE_STATIC_DEPS=1 -DBUILD_SRC_CONV=0 -DBUILD_OSC_OPCODES=1
+    ```
+  </Step>
+
+  <Step title="Build and install">
+    ```bash
+    cmake --build build --config Release
+    cmake --build build --target install
+    ```
+  </Step>
+
+  <Step title="Create installer package (optional)">
+    ```bash
+    # Adjust link paths
+    install_name_tool -id /Applications/Csound/CsoundLib64.framework/CsoundLib64 \
+      csound_install/CsoundLib64.framework/CsoundLib64
+
+    # Package Python interface
+    mkdir csound_install/CsoundLib64.framework/Versions/7.0/Resources/Python
+    cp Python/ctcsound.py csound_install/CsoundLib64.framework/Versions/7.0/Resources/Python
+
+    # Copy libraries
+    mkdir csound_install/CsoundLib64.framework/libs
+    cp portmidi_install/lib/*.dylib csound_install/CsoundLib64.framework/libs
+    cp portaudio_install/lib/*.dylib csound_install/CsoundLib64.framework/libs
+    cp liblo_install/lib/*.dylib csound_install/CsoundLib64.framework/libs
+
+    # Create package
+    mkdir -p csound_install/PkgContents/Applications/Csound
+    mv csound_install/bin/csound csound_install/PkgContents/Applications/Csound/.
+    mv csound_install/CsoundLib64.framework csound_install/PkgContents/Applications/Csound/.
+    pkgbuild --identifier com.csound.csound7Environment.csoundLib64 \
+      --root csound_install/PkgContents CsoundLib64-universal.pkg
+    ```
+  </Step>
+</Steps>
+
+## Customizing the build
+
+You can customize the build by:
+
+- Modifying the `platform/osx/custom-osx.cmake` file
+- Using CMake options (see [Build requirements](/building/requirements#useful-cmake-options))
+- Setting `CMAKE_INSTALL_PREFIX` to install in a custom location
+
+## Troubleshooting
+
+### Bison or Flex version too old
+
+macOS includes older versions of Bison and Flex. Install newer versions via Homebrew:
+
+```bash
+brew install bison flex
+```
+
+Make sure the Homebrew versions are in your PATH:
+
+```bash
+export PATH="/opt/homebrew/opt/bison/bin:$PATH"
+export PATH="/opt/homebrew/opt/flex/bin:$PATH"
+```
+
+### Framework not found at runtime
+
+If the CsoundLib64 framework is not found, ensure it's installed in one of these locations:
+- `$HOME/Library/Frameworks`
+- `/Library/Frameworks`
+- `/Applications/Csound/`
+
+### Link errors with dependencies
+
+If you encounter link errors, make sure all dependencies are built for the same architectures (arm64, x86_64, or both) as Csound.

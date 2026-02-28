@@ -1,0 +1,257 @@
+---
+title: srconv
+description: Sample rate conversion utility
+---
+
+The `srconv` utility performs high-quality sample rate conversion on audio files using Kaiser-windowed sinc interpolation. It can perform fixed or time-varying rate conversion with adjustable quality settings.
+
+## Syntax
+
+```bash
+srconv [flags] infile
+```
+
+## Required options
+
+| Option | Description |
+|--------|-------------|
+| `-r <rate>` | Output sample rate in Hz (required) |
+| `-R <rate>` | Input sample rate in Hz (required if not in header) |
+
+## Rate control options
+
+One of these must be specified:
+
+| Option | Description |
+|--------|-------------|
+| `-P <ratio>` | Pitch transposition ratio (input_rate / output_rate) |
+| `-r <rate>` | Output sample rate |
+
+## Quality and processing options
+
+| Option | Description |
+|--------|-------------|
+| `-Q <factor>` | Quality factor from 1 (low) to 8 (high), default: 2 |
+| `-i <filename>` | Time-varying ratio control breakpoint file |
+
+## Output format options
+
+| Option | Description |
+|--------|-------------|
+| `-o <filename>` | Output sound filename |
+| `-A` | Create AIFF format output |
+| `-W` | Create WAV format output |
+| `-J` | Create IRCAM format output |
+| `-h` | No header (raw output) |
+
+## Sample format options
+
+| Option | Description |
+|--------|-------------|
+| `-c` | 8-bit signed char |
+| `-8` | 8-bit unsigned char |
+| `-a` | A-law encoded |
+| `-u` | μ-law encoded |
+| `-s` | 16-bit short int (default) |
+| `-l` | 32-bit long int |
+| `-f` | 32-bit float |
+
+## Additional options
+
+| Option | Description |
+|--------|-------------|
+| `-K` | Do not generate PEAK chunks |
+| `-R` | Continuously rewrite header during processing |
+| `-H <n>` | Heartbeat display: 1=spinner, 2=dots, 3=numeric |
+| `-N` | Ring bell when complete |
+| `-- <file>` | Log output to file |
+
+## Examples
+
+### Basic sample rate conversion
+
+Convert 48kHz to 44.1kHz:
+
+```bash
+srconv -r 44100 input_48k.wav -o output_44k.wav
+```
+
+### Downsample with quality control
+
+```bash
+srconv -r 22050 -Q 4 input.wav -o output.wav
+```
+
+### Upsample to higher rate
+
+```bash
+srconv -r 96000 -Q 6 audio_44k.wav -o audio_96k.wav
+```
+
+### Conversion with explicit input rate
+
+```bash
+srconv -R 48000 -r 44100 rawfile.raw -o output.wav
+```
+
+### Using pitch ratio
+
+```bash
+srconv -P 1.5 input.wav -o output.wav
+```
+
+This transposes pitch up by a perfect fifth (ratio 3/2).
+
+### High-quality conversion
+
+```bash
+srconv -r 44100 -Q 8 hires.wav -o standard.wav
+```
+
+### Time-varying conversion
+
+```bash
+srconv -r 44100 -i ratio.brk input.wav -o output.wav
+```
+
+With `ratio.brk` containing:
+```
+0.0 1.0
+2.0 1.5
+4.0 1.0
+```
+
+This gradually speeds up and slows down over time.
+
+## Quality factor
+
+The `-Q` parameter controls interpolation quality:
+
+| Q value | Filter length | CPU usage | Quality |
+|---------|---------------|-----------|----------|
+| 1 | Shortest | Lowest | Low (audible artifacts) |
+| 2 | Short | Low | Standard (default) |
+| 3-4 | Medium | Medium | Good (transparent) |
+| 5-6 | Long | High | Very good |
+| 7-8 | Longest | Highest | Excellent (archival) |
+
+### Choosing quality
+
+- **Q=1-2**: Real-time processing, low CPU
+- **Q=3-4**: General purpose, good quality/speed balance  
+- **Q=5-6**: Professional audio production
+- **Q=7-8**: Mastering, archival conversion
+
+Higher Q values use longer filters with better frequency response and less aliasing.
+
+## Sample rate combinations
+
+### Common conversions
+
+| From | To | Ratio | Use case |
+|------|-----|-------|----------|
+| 48000 | 44100 | 0.91875 | Video to CD |
+| 44100 | 48000 | 1.08844 | CD to video |
+| 44100 | 22050 | 0.5 | Downsampling by 2 |
+| 22050 | 44100 | 2.0 | Upsampling by 2 |
+| 48000 | 96000 | 2.0 | Standard to high-res |
+| 96000 | 48000 | 0.5 | High-res to standard |
+
+### Upsampling vs downsampling
+
+**Upsampling** (increasing sample rate):
+- Adds high-frequency space (initially empty)
+- Minimal quality loss
+- Larger output files
+
+**Downsampling** (decreasing sample rate):
+- Removes high frequencies
+- Requires good anti-aliasing filter (higher Q)
+- Smaller output files
+
+## Time-varying conversion
+
+The `-i` breakpoint file format:
+
+```
+time1 ratio1
+time2 ratio2
+...
+```
+
+- Times in seconds
+- Ratios specify input_rate/output_rate at each time
+- Linear interpolation between breakpoints
+
+Example uses:
+- Variable-speed playback effects
+- Pitch glides
+- Time stretching with pitch change
+
+## Technical details
+
+### Interpolation method
+
+`srconv` uses Kaiser-windowed sinc interpolation:
+
+1. Sinc function provides ideal low-pass filter
+2. Kaiser window reduces ripple and ringing
+3. Window length determined by quality factor
+4. Fractional delay achieved by sinc interpolation
+
+### Anti-aliasing
+
+For downsampling:
+- Low-pass filter at new Nyquist frequency
+- Filter prevents aliasing artifacts
+- Higher Q provides sharper cutoff
+- Transition band width decreases with Q
+
+### Passband and stopband
+
+- **Passband**: Frequencies preserved (less than 0.45 × output_rate)
+- **Transition**: Roll-off region (depends on Q)
+- **Stopband**: Frequencies rejected (greater than 0.5 × output_rate)
+
+## Performance considerations
+
+### Processing time
+
+Factors affecting speed:
+- Quality factor (Q): Higher Q = slower
+- File duration: Linear scaling
+- Sample rate change: Upsampling slower than downsampling
+
+### Memory usage
+
+Typical: 4096-8192 samples per buffer
+
+Memory = buffer_size × channels × 4 bytes × 2 (input + output)
+
+## Common issues
+
+### Aliasing artifacts
+
+If downsampled audio has harsh, inharmonic artifacts:
+- Increase quality factor (`-Q 6` or higher)
+- Ensure input sample rate is correct
+
+### Slow processing
+
+If conversion is too slow:
+- Reduce quality factor (try `-Q 3`)
+- Process in smaller segments
+- Use batch processing overnight
+
+### Incorrect pitch
+
+If output pitch is wrong:
+- Verify input sample rate (`-R` value)
+- Check output rate (`-r` value)
+- Ensure ratio calculation is correct
+
+## Related utilities
+
+- [sndinfo](/utilities/sndinfo) - Check input/output sample rates
+- [scale](/utilities/scale) - Adjust amplitude after conversion
+- [mixer](/utilities/mixer) - Mix files with different sample rates

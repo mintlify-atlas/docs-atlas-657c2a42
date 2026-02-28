@@ -1,0 +1,193 @@
+---
+title: hetro
+description: Heterodyne filter analysis utility
+---
+
+The `hetro` utility performs heterodyne filter analysis, breaking down a sound into harmonically related components using fixed-frequency filters. This analysis method is particularly effective for pitched sounds with clear harmonic structure.
+
+## Syntax
+
+```bash
+hetro [options] inputSoundfile outputfile
+```
+
+## Arguments
+
+- `inputSoundfile` - Input audio file to analyze
+- `outputfile` - Output heterodyne analysis file
+
+## Options
+
+### File and time selection
+
+| Option | Description |
+|--------|-------------|
+| `-s <samplerate>` | Override sample rate |
+| `-c <channel>` | Channel to analyze |
+| `-b <beginTime>` | Start time in seconds |
+| `-d <duration>` | Duration to analyze in seconds |
+
+### Analysis parameters
+
+| Option | Description |
+|--------|-------------|
+| `-f <fundamental>` | Fundamental frequency estimate in Hz |
+| `-h <count>` | Number of harmonics to track (max 50) |
+| `-n <points>` | Number of breakpoints per harmonic |
+| `-l <cutoff>` | Filter cutoff frequency in Hz |
+
+### Amplitude thresholds
+
+| Option | Description |
+|--------|-------------|
+| `-M <maxamp>` | Maximum amplitude |
+| `-m <minamp>` | Minimum amplitude threshold |
+
+### File format
+
+| Option | Description |
+|--------|-------------|
+| `-X` | Use new machine-independent format |
+| `-x` | Use old machine-dependent format |
+| `--` | Log file for output messages |
+
+## Examples
+
+### Basic heterodyne analysis
+
+```bash
+hetro input.wav output.het
+```
+
+### Analysis with fundamental estimate
+
+```bash
+hetro -f 110 guitar.wav guitar.het
+```
+
+### Analyze 20 harmonics with specific resolution
+
+```bash
+hetro -h 20 -n 512 voice.wav voice.het
+```
+
+### Analysis of specific time segment
+
+```bash
+hetro -b 1.5 -d 3.0 -f 220 clarinet.wav clarinet.het
+```
+
+### Low amplitude threshold for quiet sounds
+
+```bash
+hetro -f 440 -m 32 -h 30 flute.wav flute.het
+```
+
+### High-resolution analysis
+
+```bash
+hetro -f 100 -h 40 -n 1024 cello.wav cello.het
+```
+
+## Output file format
+
+The heterodyne analysis file contains:
+
+- **Breakpoint data**: Time-varying amplitude and frequency for each harmonic
+- **Time points**: Equally spaced throughout the analysis
+- **Harmonic tracks**: Separate tracks for each harmonic partial
+
+## Fundamental frequency estimation
+
+The `-f` option sets the fundamental frequency:
+
+- **Critical parameter**: Accurate fundamental estimate is essential
+- **Pitch analysis**: Use pitch detection tools to determine fundamental
+- **Harmonics**: Analysis tracks multiples of the fundamental (2f, 3f, 4f, ...)
+- **Vibrato**: If pitch varies significantly, consider shorter analysis segments
+
+## Number of harmonics
+
+Choose harmonic count based on:
+
+- **Bright sounds** (brass, strings with bow pressure): 30-50 harmonics
+- **Medium brightness** (voice, woodwinds): 15-30 harmonics  
+- **Dark sounds** (flute, bass instruments): 10-20 harmonics
+- **Maximum**: 50 harmonics (HMAX constant)
+
+## Breakpoint resolution
+
+The `-n` option controls time resolution:
+
+- **128-256**: Coarse time resolution, small files
+- **256-512 (typical)**: Good balance for most sounds
+- **512-1024**: Fine time resolution for detailed envelope tracking
+- **1024+**: Very detailed, large output files
+
+More breakpoints = better time detail but larger files.
+
+## Filter cutoff frequency
+
+The `-l` option sets the heterodyne filter cutoff:
+
+- **Default**: Based on fundamental frequency
+- **Lower cutoff**: Narrower filters, better frequency selectivity
+- **Higher cutoff**: Wider filters, captures frequency variations
+- **Vibrato**: Use higher cutoff to capture pitch modulation
+
+## Amplitude thresholds
+
+### Minimum amplitude (`-m`)
+
+- Harmonics below this threshold are ignored
+- Default: 64 (on scale to ~32767)
+- Lower values capture quieter harmonics but may include noise
+- Higher values focus on prominent harmonics only
+
+### Maximum amplitude (`-M`)
+
+- Sets the reference level for amplitude scaling
+- Used for normalization of output data
+
+## Using heterodyne files in Csound
+
+Heterodyne analysis files can be used with Csound opcodes:
+
+- `adsyn` - Additive synthesis from analysis file
+- `adsynt` - Additive synthesis with time control
+- `adsynt2` - Extended additive synthesis
+
+The opcodes resynthesize sound by:
+1. Reading harmonic amplitude and frequency breakpoints
+2. Generating sine oscillators for each harmonic
+3. Summing the oscillators with envelope interpolation
+
+## Technical details
+
+### Heterodyne principle
+
+The analysis:
+1. Multiplies input signal by sine and cosine at each harmonic frequency
+2. Low-pass filters the results to extract amplitude and phase
+3. Tracks amplitude and frequency variations over time
+4. Stores breakpoint data for resynthesis
+
+### File formats
+
+**New format (`-X`)**: Machine-independent, portable across systems
+
+**Old format (`-x`)**: Machine-dependent, may have byte-order issues
+
+## Best practices
+
+1. **Analyze pitched sounds**: Hetro works best with clear harmonic structure
+2. **Accurate fundamental**: Use pitch detection to find fundamental frequency
+3. **Stable pitch**: Works best with relatively stable pitched sounds
+4. **Adjust harmonics**: Match harmonic count to sound brightness
+5. **Test resynthesis**: Verify analysis quality by resynthesizing
+
+## Related utilities
+
+- [atsa](/utilities/atsa) - ATS analysis with partials tracking
+- [pvanal](/utilities/pvanal) - Phase vocoder analysis
+- [lpanal](/utilities/lpanal) - LPC analysis for formant modeling

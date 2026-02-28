@@ -1,0 +1,187 @@
+---
+title: Contributing to Csound
+description: Guidelines for contributing to the Csound project
+---
+
+## Getting started
+
+Csound is an open-source audio programming language with a long history and an active community. Contributions are welcome from developers of all skill levels.
+
+### Prerequisites
+
+Before contributing, ensure you have:
+
+- **Git**: For version control and submitting changes
+- **C/C++ compiler**: GCC, Clang, or MSVC depending on your platform
+- **CMake 3.13.4+**: Build system (3.28+ for Apple platforms)
+- **Flex and Bison**: Required for parser generation (Bison 3.8+ and Flex 2.6+ recommended)
+
+### Repository structure
+
+The Csound repository is organized as follows:
+
+- `Engine/` - Core engine and compiler code
+- `Top/` - Top-level API and main entry points
+- `OOps/` - Unit generators and opcodes
+- `Opcodes/` - Additional opcodes and extensions
+- `InOut/` - Audio/MIDI I/O and file handling
+- `H/` and `include/` - Public and internal headers
+- `tests/` - Test suites (unit, integration, and regression)
+- `platform/` - Platform-specific build configurations
+- `.github/workflows/` - CI/CD pipeline definitions
+
+## Contribution workflow
+
+### 1. Fork and clone
+
+Fork the Csound repository on GitHub and clone your fork:
+
+```bash
+git clone https://github.com/YOUR-USERNAME/csound.git
+cd csound
+git remote add upstream https://github.com/csound/csound.git
+```
+
+### 2. Create a feature branch
+
+Create a branch for your changes:
+
+```bash
+git checkout -b feature/your-feature-name
+```
+
+Use descriptive branch names:
+- `feature/new-opcode-name` for new features
+- `fix/issue-description` for bug fixes
+- `docs/documentation-topic` for documentation updates
+
+### 3. Make your changes
+
+Follow the Csound coding conventions:
+
+- **C code**: Use GNU C11 style (`-std=gnu11`)
+- **C++ code**: Use C++11 standard
+- **Indentation**: Consistent with existing code in the file
+- **Comments**: Document complex logic and public APIs
+- **Error handling**: Check return values and handle errors appropriately
+
+### 4. Build and test locally
+
+Build your changes and run tests:
+
+```bash
+mkdir build && cd build
+cmake .. -DBUILD_TESTS=1
+make
+make test
+make csdtests
+```
+
+See the [Build System](/guides/build-system) and [Testing](/guides/testing) guides for more details.
+
+### 5. Commit your changes
+
+Write clear, descriptive commit messages:
+
+```bash
+git add .
+git commit -m "Add new oscillator opcode: myosc
+
+Implements a custom oscillator with phase modulation support.
+Includes unit tests and documentation."
+```
+
+Good commit messages:
+- Start with a concise summary (50 characters or less)
+- Include a blank line, then detailed description
+- Reference issue numbers when applicable: "Fixes #1234"
+- Explain the "why" behind changes, not just the "what"
+
+### 6. Push and create pull request
+
+Push your branch and open a pull request:
+
+```bash
+git push origin feature/your-feature-name
+```
+
+In your pull request:
+- Describe what your changes do and why they're needed
+- Reference related issues
+- Include test results if applicable
+- Be responsive to review feedback
+
+## Code guidelines
+
+### Adding new opcodes
+
+When adding new opcodes:
+
+1. **Implementation**: Add your opcode implementation to the appropriate file in `Opcodes/`
+2. **Registration**: Register the opcode in the initialization function
+3. **Documentation**: Add usage examples in comments
+4. **Tests**: Include test cases in `tests/commandline/`
+
+### Memory management
+
+- Use Csound's memory allocation functions (`csound->Malloc`, `csound->Free`)
+- Clean up resources in opcode destroy functions
+- Avoid memory leaks - run tests with address sanitizer when available
+
+### Platform compatibility
+
+Ensure code works across platforms:
+- Avoid platform-specific code when possible
+- Use CMake feature detection for conditional compilation
+- Test on multiple platforms if available (CI will help with this)
+
+## Testing requirements
+
+All contributions should include appropriate tests:
+
+- **New features**: Add integration tests in `tests/commandline/`
+- **Bug fixes**: Add regression tests to prevent recurrence
+- **API changes**: Add unit tests in `tests/c/`
+
+See the [Testing guide](/guides/testing) for details on writing and running tests.
+
+## Continuous integration
+
+All pull requests are automatically tested on:
+- **Linux**: Ubuntu (apt-get and vcpkg builds)
+- **macOS**: Homebrew and installer builds
+- **Windows**: MSVC and MinGW builds
+- **iOS and Android**: Mobile platform builds
+- **WebAssembly**: Emscripten builds
+
+CI failures must be resolved before merging. See the [CI/CD guide](/guides/ci-cd) for details on the pipeline.
+
+## Documentation
+
+When adding new features or opcodes:
+
+- Update relevant documentation files
+- Add code examples demonstrating usage
+- Update the manual if appropriate (see Csound manual repository)
+
+## Getting help
+
+If you need assistance:
+
+- **Mailing list**: csound@listserv.heanet.ie
+- **Forum**: https://forum.csound.com/
+- **Slack**: Join the Csound Slack workspace
+- **GitHub Issues**: For bug reports and feature requests
+
+## Code of conduct
+
+Be respectful and professional in all interactions. The Csound community values:
+
+- Constructive feedback and collaboration
+- Patience with newcomers
+- Recognition that everyone contributes in different ways
+- Creating a welcoming environment for all
+
+## License
+
+By contributing to Csound, you agree that your contributions will be licensed under the LGPL v2.1 license that covers the project.

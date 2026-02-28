@@ -1,0 +1,473 @@
+---
+title: MIDI input/output
+description: Using MIDI devices and files with Csound
+---
+
+Csound provides comprehensive MIDI support for both real-time device I/O and MIDI file playback. MIDI messages can trigger instruments, control parameters, and be generated as output.
+
+## MIDI input
+
+### Real-time MIDI device
+
+Use the `-M` flag to receive MIDI from a device:
+
+```bash
+csound -M0 -odac myfile.csd       # Use default MIDI device (device 0)
+csound -M1 -odac myfile.csd       # Use MIDI device 1
+csound -M2 -odac myfile.csd       # Use MIDI device 2
+```
+
+### MIDI file input
+
+Play a MIDI file:
+
+```bash
+csound -F input.mid -odac myfile.csd
+csound --midifile=song.mid -odac myfile.csd
+```
+
+### Terminate on MIDI end
+
+Stop performance when MIDI file finishes:
+
+```bash
+csound -F input.mid -T -odac myfile.csd
+csound --terminate-on-midi -F input.mid -odac myfile.csd
+```
+
+## MIDI output
+
+### Real-time MIDI output
+
+Send MIDI to a device:
+
+```bash
+csound -Q1 -odac myfile.csd       # Send to MIDI device 1
+csound -Q0 -odac myfile.csd       # Send to default MIDI device
+```
+
+### MIDI file output
+
+Write MIDI to a file:
+
+```bash
+csound --midioutfile=output.mid -n myfile.csd
+```
+
+## Listing MIDI devices
+
+List available MIDI devices:
+
+```bash
+csound --midi-devices             # List all MIDI devices
+csound --midi-devices=in          # List input devices only
+csound --midi-devices=out         # List output devices only
+```
+
+Example output:
+
+```
+MIDI input devices:
+    0: UM-ONE MIDI 1
+    1: Arturia KeyStep 32
+    2: IAC Driver Bus 1
+MIDI output devices:
+    0: UM-ONE MIDI 1
+    1: IAC Driver Bus 1
+```
+
+## MIDI-triggered instruments
+
+Instruments can respond to MIDI note-on messages automatically.
+
+### Basic MIDI instrument
+
+```csound
+<CsoundSynthesizer>
+<CsOptions>
+-M0 -odac
+</CsOptions>
+<CsInstruments>
+sr = 44100
+ksmps = 32
+nchnls = 2
+0dbfs = 1
+
+instr 1
+    icps cpsmidi        ; Get MIDI note as frequency
+    iamp ampmidi 0.5    ; Get MIDI velocity as amplitude
+    
+    asig vco2 iamp, icps
+    aenv linsegr 0, 0.01, 1, 0.1, 0
+    out asig * aenv, asig * aenv
+endin
+
+</CsInstruments>
+<CsScore>
+f 0 3600  ; Run for 1 hour waiting for MIDI
+</CsScore>
+</CsoundSynthesizer>
+```
+
+With `-M0`, MIDI note-on messages on any channel automatically trigger instrument 1. Note-off messages trigger the release segment.
+
+### MIDI channel mapping
+
+Map MIDI channels to specific instruments:
+
+```csound
+massign 1, 1    ; MIDI channel 1 -> instrument 1
+massign 2, 2    ; MIDI channel 2 -> instrument 2
+massign 3, 1    ; MIDI channel 3 -> instrument 1
+```
+
+Disable automatic MIDI triggering:
+
+```csound
+massign 0, 0    ; Disable all automatic MIDI->instr mapping
+```
+
+## MIDI opcodes
+
+### Note information
+
+```csound
+instr 1
+    icps cpsmidi         ; MIDI note as frequency (Hz)
+    ioct octmidi         ; MIDI note as octave.decimal
+    ipch pchmidi         ; MIDI note as pitch-class notation
+    inum notnum          ; MIDI note number (0-127)
+    
+    iamp ampmidi 1       ; Velocity as amplitude (0-1)
+    ivel veloc 0, 127    ; Velocity as MIDI value (0-127)
+    
+    iaft aftouch 0, 1    ; Aftertouch (0-1)
+    ichan midichn        ; MIDI channel (1-16)
+endin
+```
+
+### Control change
+
+```csound
+instr 1
+    ; Read MIDI CC 1 (mod wheel)
+    kmod ctrl7 1, 0, 1     ; Read CC 1, output 0-1
+    
+    ; Read MIDI CC 7 (volume)
+    kvol ctrl7 7, 0, 1     ; Read CC 7, output 0-1
+    
+    ; Read CC 74 with custom range
+    kcut ctrl7 74, 100, 5000  ; Output 100-5000
+    
+    asig vco2 0.3 * kvol, 440
+    asig moogladder asig, kcut, 0.5
+    out asig, asig
+endin
+```
+
+### Pitch bend
+
+```csound
+instr 1
+    icps cpsmidi
+    kbend pchbend 0, 2    ; Pitch bend range ±2 semitones
+    
+    asig vco2 0.3, icps * semitone(kbend)
+    out asig, asig
+endin
+```
+
+### Polyphonic aftertouch
+
+```csound
+instr 1
+    icps cpsmidi
+    kaft polyaft 0, 1     ; Polyphonic aftertouch 0-1
+    
+    asig vco2 0.3 * (1 + kaft), icps
+    out asig, asig
+endin
+```
+
+### Program change
+
+```csound
+instr 1
+    kprog pgmassign 0     ; Get program change (0-127)
+    
+    if changed(kprog) == 1 then
+        printks "Program: %d\n", 0, kprog
+    endif
+endin
+```
+
+## MIDI parameter mapping
+
+Map MIDI values to specific p-fields from the command line.
+
+### MIDI key mapping
+
+```bash
+csound --midi-key=4 -M0 -odac myfile.csd        # Note number to p4
+csound --midi-key-cps=4 -M0 -odac myfile.csd    # Frequency to p4
+csound --midi-key-oct=4 -M0 -odac myfile.csd    # Octave notation to p4
+csound --midi-key-pch=4 -M0 -odac myfile.csd    # Pitch-class to p4
+```
+
+Then access in the instrument:
+
+```csound
+instr 1
+    ifreq = p4          ; Frequency from MIDI note
+    asig vco2 0.3, ifreq
+    out asig, asig
+endin
+```
+
+### MIDI velocity mapping
+
+```bash
+csound --midi-velocity=5 -M0 -odac myfile.csd      # Raw velocity to p5
+csound --midi-velocity-amp=5 -M0 -odac myfile.csd  # Amplitude to p5
+```
+
+```csound
+instr 1
+    icps cpsmidi
+    iamp = p5           ; Amplitude from velocity
+    asig vco2 iamp, icps
+    out asig, asig
+endin
+```
+
+## MIDI output opcodes
+
+### Send note on/off
+
+```csound
+instr 1
+    ; Send MIDI note on (channel 1, note 60, velocity 100)
+    noteondur 1, 60, 100, 1
+    
+    ; Or separate on/off
+    noteon 1, 60, 100
+    ; ... time passes ...
+    noteoff 1, 60, 100
+endin
+```
+
+### Send control change
+
+```csound
+instr 1
+    kfreq lfo 64, 0.5, 1
+    kfreq += 64
+    
+    ; Send CC 1 (mod wheel)
+    outcc 1, 1, kfreq
+endin
+```
+
+### Send program change
+
+```csound
+instr 1
+    ; Send program change 5 on channel 1
+    pgmout 1, 5, 0
+endin
+```
+
+### Send pitch bend
+
+```csound
+instr 1
+    kbend lfo 8192, 0.2
+    
+    ; Send pitch bend (±8192)
+    pchbend 1, kbend, kbend
+endin
+```
+
+## Advanced MIDI input
+
+For custom MIDI handling, use callbacks in the Csound API.
+
+### Custom MIDI input (C)
+
+```c
+#include <CsoundLib64/csound.h>
+
+static int midi_open(CSOUND *csound, void **userData, 
+                     const char *devName) {
+    // Initialize MIDI device
+    return OK;
+}
+
+static int midi_read(CSOUND *csound, void *userData,
+                     unsigned char *buf, int nBytes) {
+    int cnt = 0;
+    int data;
+    
+    // Read MIDI bytes from your source
+    while (scanf("%d", &data) > 0 && cnt < nBytes) {
+        buf[cnt++] = data;
+    }
+    
+    return cnt;
+}
+
+static int midi_close(CSOUND *csound, void *userData) {
+    return OK;
+}
+
+int main(int argc, const char *argv[]) {
+    CSOUND *csound = csoundCreate(NULL, NULL);
+    
+    // Set MIDI callbacks
+    csoundSetExternalMidiInOpenCallback(csound, midi_open);
+    csoundSetExternalMidiReadCallback(csound, midi_read);
+    csoundSetExternalMidiInCloseCallback(csound, midi_close);
+    csoundSetHostMIDIIO(csound);
+    
+    // Set options and compile
+    csoundSetOption(csound, "-M0");
+    csoundSetOption(csound, "-odac");
+    
+    csoundCompile(csound, argc, argv);
+    csoundStart(csound);
+    
+    while (csoundPerformKsmps(csound) == 0);
+    
+    csoundDestroy(csound);
+    return 0;
+}
+```
+
+## MIDI configuration examples
+
+### Polyphonic synthesizer
+
+```csound
+<CsoundSynthesizer>
+<CsOptions>
+-M0 -odac -b256 -B1024
+</CsOptions>
+<CsInstruments>
+sr = 48000
+ksmps = 32
+nchnls = 2
+0dbfs = 1
+
+; Map all MIDI channels to instrument 1
+massign 0, 1
+
+instr 1
+    icps cpsmidi
+    iamp ampmidi 0.5
+    kbend pchbend 0, 2
+    kmod ctrl7 1, 0, 1
+    kcut ctrl7 74, 500, 5000
+    
+    asig vco2 iamp, icps * semitone(kbend) * (1 + kmod * 0.01)
+    asig moogladder asig, kcut, 0.7
+    aenv linsegr 0, 0.01, 1, 0.1, 0
+    
+    outs asig * aenv, asig * aenv
+endin
+
+</CsInstruments>
+<CsScore>
+f 0 3600
+</CsScore>
+</CsoundSynthesizer>
+```
+
+### MIDI file player
+
+```bash
+csound -F song.mid -T -o output.wav synthesizer.csd
+```
+
+### MIDI-to-OSC bridge
+
+```csound
+instr 1
+    icps cpsmidi
+    iamp ampmidi 1
+    
+    ; Send OSC on note events
+    OSCsend 1, "localhost", 7000, "/note", "if", int(icps), iamp
+endin
+```
+
+## MIDI drivers
+
+Csound supports multiple MIDI backend drivers.
+
+### Select MIDI driver
+
+```bash
+csound -+rtmidi=portmidi -M0 -odac myfile.csd
+csound -+rtmidi=alsa -M0 -odac myfile.csd
+csound -+rtmidi=coremidi -M0 -odac myfile.csd
+```
+
+Or set environment variable:
+
+```bash
+export RTMIDI=portmidi
+csound -M0 -odac myfile.csd
+```
+
+### Available MIDI drivers
+
+- **PortMidi** (`portmidi`) - Cross-platform (default)
+- **ALSA** (`alsa`) - Linux native ALSA MIDI
+- **CoreMIDI** (`coremidi`) - macOS native
+- **WinMM** (`winmm`) - Windows native
+- **JACK** (`jack`) - JACK MIDI (Linux/macOS)
+
+## Troubleshooting
+
+### No MIDI input received
+
+Check that MIDI is enabled and devices are listed:
+
+```bash
+csound --midi-devices=in
+csound -M0 -odac --midi-devices=in myfile.csd
+```
+
+Ensure massign is configured:
+
+```csound
+massign 0, 1    ; Map all channels to instrument 1
+```
+
+### Wrong MIDI driver
+
+Specify driver explicitly:
+
+```bash
+csound -+rtmidi=alsa -M0 -odac myfile.csd
+```
+
+### High MIDI latency
+
+Reduce audio buffer sizes:
+
+```bash
+csound -M0 -odac -b256 -B1024 myfile.csd
+```
+
+### MIDI notes stick
+
+Ensure proper release handling:
+
+```csound
+instr 1
+    ; Use linsegr for note-off release
+    aenv linsegr 0, 0.01, 1, 0.1, 0
+    ; or use linenr, xtratim, etc.
+endin
+```

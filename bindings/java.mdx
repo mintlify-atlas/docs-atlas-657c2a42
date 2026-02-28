@@ -1,0 +1,580 @@
+---
+title: Java bindings
+description: Use Csound from Java applications
+---
+
+Csound provides Java bindings through JNI (Java Native Interface), allowing you to integrate Csound into Java applications. The bindings are currently in transition, with new JNI-based bindings replacing the older SWIG-based implementation.
+
+## Current status
+
+<Note>
+  The Java bindings for Csound 7 are being modernized. The desktop bindings are transitioning to JNI-based bindings from [CsoundJNI](https://github.com/kunstmusik/CsoundJNI). The SWIG-based bindings remain available for Android builds.
+</Note>
+
+## Installation
+
+### Maven dependency
+
+Add to your `pom.xml`:
+
+```xml
+<dependency>
+    <groupId>com.kunstmusik</groupId>
+    <artifactId>csound-jni</artifactId>
+    <version>7.0.0</version>
+</dependency>
+```
+
+### Gradle dependency
+
+Add to your `build.gradle`:
+
+```gradle
+dependencies {
+    implementation 'com.kunstmusik:csound-jni:7.0.0'
+}
+```
+
+## Basic usage
+
+### Creating an instance
+
+```java
+import com.kunstmusik.csound.Csound;
+
+public class CsoundExample {
+    public static void main(String[] args) {
+        // Create Csound instance
+        Csound csound = new Csound();
+        
+        // Get version
+        int version = csound.getVersion();
+        System.out.println("Csound version: " + version);
+        
+        // Cleanup
+        csound.destroy();
+    }
+}
+```
+
+### Using try-with-resources
+
+```java
+import com.kunstmusik.csound.Csound;
+
+public class CsoundExample {
+    public static void main(String[] args) {
+        try (Csound csound = new Csound()) {
+            System.out.println("Csound version: " + csound.getVersion());
+            // Automatic cleanup when leaving scope
+        }
+    }
+}
+```
+
+## Compilation and performance
+
+### Compiling a CSD file
+
+```java
+import com.kunstmusik.csound.Csound;
+
+public class PlayCSD {
+    public static void main(String[] args) {
+        try (Csound csound = new Csound()) {
+            // Set options
+            csound.setOption("-odac");  // Audio to DAC
+            csound.setOption("-m0");    // No messages
+            
+            // Compile CSD file
+            int result = csound.compileCSD("myfile.csd");
+            if (result != 0) {
+                System.err.println("Compilation failed");
+                return;
+            }
+            
+            // Start performance
+            csound.start();
+            
+            // Performance loop
+            while (csound.performKsmps() == 0) {
+                // Process one k-period
+            }
+            
+            System.out.println("Performance complete");
+        }
+    }
+}
+```
+
+### Compiling orchestra code
+
+```java
+String orc = 
+    "sr = 44100\n" +
+    "ksmps = 64\n" +
+    "nchnls = 2\n" +
+    "0dbfs = 1\n" +
+    "\n" +
+    "instr 1\n" +
+    "    kfreq = p4\n" +
+    "    asig oscils 0.5, kfreq, 0\n" +
+    "    outs asig, asig\n" +
+    "endin\n";
+
+try (Csound csound = new Csound()) {
+    csound.compileOrc(orc);
+    csound.start();
+    
+    // Send score event
+    csound.inputMessage("i 1 0 2 440");
+    
+    // Perform
+    while (csound.performKsmps() == 0);
+}
+```
+
+## Channels
+
+### Control channels
+
+```java
+String orc = 
+    "sr = 44100\n" +
+    "ksmps = 64\n" +
+    "nchnls = 2\n" +
+    "0dbfs = 1\n" +
+    "\n" +
+    "instr 1\n" +
+    "    kfreq chnget \"frequency\"\n" +
+    "    kvol chnget \"volume\"\n" +
+    "    asig oscils kvol, kfreq, 0\n" +
+    "    outs asig, asig\n" +
+    "    \n" +
+    "    kout = kfreq * 2\n" +
+    "    chnset kout, \"output\"\n" +
+    "endin\n";
+
+try (Csound csound = new Csound()) {
+    csound.compileOrc(orc);
+    csound.start();
+    csound.inputMessage("i 1 0 5");
+    
+    // Set input channels
+    csound.setControlChannel("frequency", 440.0);
+    csound.setControlChannel("volume", 0.8);
+    
+    // Performance loop
+    while (csound.performKsmps() == 0) {
+        // Read output channel
+        double output = csound.getControlChannel("output");
+        System.out.println("Output: " + output);
+    }
+}
+```
+
+### String channels
+
+```java
+try (Csound csound = new Csound()) {
+    // Setup...
+    
+    // Set string channel
+    csound.setStringChannel("message", "Hello from Java!");
+    
+    // Get string channel
+    String msg = csound.getStringChannel("message");
+    System.out.println(msg);
+}
+```
+
+## Audio I/O
+
+### Processing audio buffers
+
+```java
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+
+try (Csound csound = new Csound()) {
+    // Setup and compilation...
+    csound.start();
+    
+    int ksmps = csound.getKsmps();
+    int nchnls = csound.getNchnls();
+    
+    // Get output buffer
+    double[] spout = csound.getSpout();
+    
+    while (csound.performKsmps() == 0) {
+        // Process output buffer
+        for (int i = 0; i < ksmps * nchnls; i++) {
+            float sample = (float) spout[i];
+            // Send to audio output...
+        }
+    }
+}
+```
+
+## Score events
+
+### Sending events
+
+```java
+try (Csound csound = new Csound()) {
+    // Setup...
+    csound.start();
+    
+    // Send i-statement
+    csound.inputMessage("i 1 0 2 440");
+    csound.inputMessage("i 1 + 2 550");  // '+' means after previous
+    csound.inputMessage("i 1 0.5 1 660");
+    
+    while (csound.performKsmps() == 0);
+}
+```
+
+### Array-based events
+
+```java
+double[] pfields = {1, 0, 2, 440}; // instr, start, dur, freq
+csound.scoreEvent('i', pfields);
+```
+
+## Tables
+
+### Reading table data
+
+```java
+try (Csound csound = new Csound()) {
+    // Create a table
+    String orc = "giSine ftgen 1, 0, 1024, 10, 1";
+    csound.compileOrc(orc);
+    csound.start();
+    
+    // Get table length
+    int length = csound.tableLength(1);
+    System.out.println("Table length: " + length);
+    
+    // Get table data
+    double[] table = csound.getTable(1);
+    
+    // Print first 10 values
+    System.out.println("First 10 values:");
+    for (int i = 0; i < Math.min(10, table.length); i++) {
+        System.out.println("table[" + i + "] = " + table[i]);
+    }
+}
+```
+
+### Writing table data
+
+```java
+try (Csound csound = new Csound()) {
+    // Create table
+    String orc = "giTable ftgen 1, 0, 1024, 7, 0, 1024, 0";
+    csound.compileOrc(orc);
+    csound.start();
+    
+    // Get table
+    double[] table = csound.getTable(1);
+    
+    // Write new values (sine wave)
+    for (int i = 0; i < table.length; i++) {
+        table[i] = Math.sin(2.0 * Math.PI * i / table.length);
+    }
+    
+    // Update table in Csound
+    csound.setTable(1, table);
+}
+```
+
+## Complete example
+
+```java
+import com.kunstmusik.csound.Csound;
+import java.util.concurrent.TimeUnit;
+
+public class SimpleSynthesizer {
+    private Csound csound;
+    
+    public SimpleSynthesizer() {
+        csound = new Csound();
+    }
+    
+    public void initialize() {
+        // Set options
+        csound.setOption("-odac");
+        csound.setOption("-m0");
+        
+        // Define orchestra
+        String orc = 
+            "sr = 44100\n" +
+            "ksmps = 64\n" +
+            "nchnls = 2\n" +
+            "0dbfs = 1\n" +
+            "\n" +
+            "instr 1\n" +
+            "    kfreq chnget \"frequency\"\n" +
+            "    kamp chnget \"amplitude\"\n" +
+            "    asig vco2 kamp * 0.5, kfreq\n" +
+            "    asig *= linsegr(0, 0.01, 1, 0.1, 0)\n" +
+            "    outs asig, asig\n" +
+            "endin\n";
+        
+        // Compile and start
+        if (csound.compileOrc(orc) != 0) {
+            throw new RuntimeException("Failed to compile orchestra");
+        }
+        
+        if (csound.start() != 0) {
+            throw new RuntimeException("Failed to start Csound");
+        }
+        
+        // Set initial values
+        csound.setControlChannel("frequency", 440.0);
+        csound.setControlChannel("amplitude", 0.5);
+        
+        System.out.println("Synthesizer initialized");
+    }
+    
+    public void playNote(double freq, double amp, double duration) {
+        csound.setControlChannel("frequency", freq);
+        csound.setControlChannel("amplitude", amp);
+        csound.inputMessage("i 1 0 " + duration);
+    }
+    
+    public void setFrequency(double freq) {
+        csound.setControlChannel("frequency", freq);
+    }
+    
+    public void setAmplitude(double amp) {
+        csound.setControlChannel("amplitude", amp);
+    }
+    
+    public boolean performKsmps() {
+        return csound.performKsmps() == 0;
+    }
+    
+    public void cleanup() {
+        csound.destroy();
+    }
+    
+    public static void main(String[] args) {
+        SimpleSynthesizer synth = new SimpleSynthesizer();
+        synth.initialize();
+        
+        // Musical notes (C major scale)
+        double[] notes = {
+            261.63,  // C4
+            293.66,  // D4
+            329.63,  // E4
+            349.23,  // F4
+            392.00,  // G4
+            440.00,  // A4
+            493.88,  // B4
+            523.25,  // C5
+        };
+        
+        System.out.println("Playing scale...");
+        
+        // Play scale
+        for (double note : notes) {
+            System.out.println("Playing note: " + note + " Hz");
+            synth.playNote(note, 0.5, 0.5);
+            
+            // Perform for note duration
+            long startTime = System.currentTimeMillis();
+            while (System.currentTimeMillis() - startTime < 500) {
+                if (!synth.performKsmps()) {
+                    break;
+                }
+            }
+        }
+        
+        // Extra time for release
+        System.out.println("Finishing...");
+        for (int i = 0; i < 10; i++) {
+            if (!synth.performKsmps()) {
+                break;
+            }
+        }
+        
+        synth.cleanup();
+        System.out.println("Done");
+    }
+}
+```
+
+## Threading example
+
+```java
+import com.kunstmusik.csound.Csound;
+
+public class CsoundThread extends Thread {
+    private Csound csound;
+    private volatile boolean running = false;
+    
+    public CsoundThread() {
+        csound = new Csound();
+    }
+    
+    public void initialize() {
+        csound.setOption("-odac");
+        
+        String orc = 
+            "sr = 44100\n" +
+            "ksmps = 64\n" +
+            "nchnls = 2\n" +
+            "0dbfs = 1\n" +
+            "\n" +
+            "instr 1\n" +
+            "    kfreq chnget \"freq\"\n" +
+            "    asig oscils 0.3, kfreq, 0\n" +
+            "    outs asig, asig\n" +
+            "endin\n";
+        
+        csound.compileOrc(orc);
+        csound.start();
+        csound.inputMessage("i 1 0 -1");  // Infinite duration
+    }
+    
+    @Override
+    public void run() {
+        running = true;
+        while (running) {
+            if (csound.performKsmps() != 0) {
+                break;
+            }
+        }
+    }
+    
+    public void setFrequency(double freq) {
+        csound.setControlChannel("freq", freq);
+    }
+    
+    public void stopPerformance() {
+        running = false;
+        try {
+            join();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        csound.destroy();
+    }
+    
+    public static void main(String[] args) throws InterruptedException {
+        CsoundThread csoundThread = new CsoundThread();
+        csoundThread.initialize();
+        csoundThread.start();
+        
+        System.out.println("Performing in background thread...");
+        for (int i = 0; i < 10; i++) {
+            double freq = 220 + i * 50;
+            csoundThread.setFrequency(freq);
+            System.out.println("Frequency: " + freq + " Hz");
+            Thread.sleep(500);
+        }
+        
+        csoundThread.stopPerformance();
+        System.out.println("Done");
+    }
+}
+```
+
+## Android support
+
+For Android applications, use the SWIG-based bindings:
+
+```java
+import csnd6.Csound;
+import csnd6.CsoundMYFLTArray;
+
+public class AndroidCsoundActivity extends Activity {
+    private Csound csound;
+    
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        
+        // Load native library
+        System.loadLibrary("csoundandroid");
+        
+        // Create Csound instance
+        csound = new Csound();
+        
+        // Setup and use Csound...
+    }
+    
+    @Override
+    protected void onDestroy() {
+        if (csound != null) {
+            csound.Stop();
+            csound.Cleanup();
+            csound.delete();
+        }
+        super.onDestroy();
+    }
+}
+```
+
+## Building Java applications
+
+### Maven project structure
+
+```
+my-csound-app/
+├── pom.xml
+└── src/
+    └── main/
+        └── java/
+            └── com/
+                └── example/
+                    └── CsoundExample.java
+```
+
+### Example pom.xml
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    
+    <groupId>com.example</groupId>
+    <artifactId>csound-app</artifactId>
+    <version>1.0-SNAPSHOT</version>
+    
+    <properties>
+        <maven.compiler.source>11</maven.compiler.source>
+        <maven.compiler.target>11</maven.compiler.target>
+    </properties>
+    
+    <dependencies>
+        <dependency>
+            <groupId>com.kunstmusik</groupId>
+            <artifactId>csound-jni</artifactId>
+            <version>7.0.0</version>
+        </dependency>
+    </dependencies>
+</project>
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="CsoundJNI" icon="java" href="https://github.com/kunstmusik/CsoundJNI">
+    Java bindings repository
+  </Card>
+  <Card title="C API reference" icon="code" href="/bindings/c-api">
+    Explore the underlying C API
+  </Card>
+  <Card title="Python bindings" icon="python" href="/bindings/python">
+    Compare with Python bindings
+  </Card>
+  <Card title="Examples" icon="book-open" href="https://github.com/kunstmusik/csound-java-examples">
+    Browse Java examples
+  </Card>
+</CardGroup>

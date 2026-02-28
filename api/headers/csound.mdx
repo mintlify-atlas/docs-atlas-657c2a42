@@ -1,0 +1,233 @@
+---
+title: csound.h
+description: Main Csound API header for host applications
+---
+
+The `csound.h` header is the primary interface for integrating Csound into host applications. It provides the complete public API for creating, configuring, and controlling Csound instances.
+
+## Overview
+
+This header defines the core API that host applications use to:
+- Create and destroy Csound instances
+- Compile and perform Csound code
+- Control real-time audio and MIDI I/O
+- Manage channels, tables, and events
+- Access performance attributes and configuration
+
+## Key components
+
+### Opaque types
+
+```c
+typedef struct CSOUND_ CSOUND;
+typedef struct stringdat STRINGDAT;
+typedef struct arraydat ARRAYDAT;
+typedef struct pvsdat PVSDAT;
+```
+
+The `CSOUND` pointer is the central handle for all Csound operations.
+
+### Status codes
+
+```c
+typedef enum {
+  CSOUND_SUCCESS = 0,           // Completed successfully
+  CSOUND_ERROR = -1,            // Unspecified failure
+  CSOUND_INITIALIZATION = -2,   // Failed during initialization
+  CSOUND_PERFORMANCE = -3,      // Failed during performance
+  CSOUND_MEMORY = -4,           // Failed to allocate memory
+  CSOUND_SIGNAL = -5            // Terminated by signal
+} CSOUND_STATUS;
+```
+
+### Debug levels
+
+```c
+typedef enum {
+  DEBUG_NONE = 0,
+  DEBUG_RUNTIME = 0x01,         // Runtime messages
+  DEBUG_COMPILER = 0x02,        // Compiler messages
+  DEBUG_SEMANTICS = 0x04,       // Semantic analysis
+  DEBUG_EXPRESSIONS = 0x08,     // Expression messages
+  DEBUG_PARSER = 0x10,          // Parser messages
+  DEBUG_TREE = 0x20,            // Print AST
+  DEBUG_INSTR = 0x40,           // Print compiled instrs
+  DEBUG_OPCODES = 0x80,         // Opcode messages
+  DEBUG_PARCS = 0x100,          // Parcs messages
+  DEBUG_FULL = 0x7FFFFFFF       // All messages
+} DEBUG_STATUS;
+```
+
+### Parameters structure
+
+```c
+typedef struct CSOUND_PARAMS {
+  int32_t odebug;               // Debug flag
+  int32_t sfread;               // Sound input read flag
+  int32_t sfwrite;              // Sound output write flag (-s)
+  int32_t filetyp;              // Soundfile type code
+  int32_t inbufsamps;           // Input buffer size in samples
+  int32_t outbufsamps;          // Output buffer size in samples
+  int32_t informat;             // Input soundfile format
+  int32_t outformat;            // Output soundfile format
+  int32_t msglevel;             // Message level (-m)
+  int32_t numThreads;           // Multicore threads (-j)
+  MYFLT sr_override;            // Sampling rate override (-r)
+  MYFLT kr_override;            // Control rate override (-k)
+  int32_t nchnls_override;      // Output channels override
+  int32_t nchnls_i_override;    // Input channels override
+  char *infilename;             // Input file name (-i)
+  char *outfilename;            // Output file name (-o)
+  // ... additional parameters
+} OPARMS;
+```
+
+### Device information
+
+```c
+typedef struct {
+  char device_name[128];
+  char device_id[128];
+  char rt_module[128];
+  int32_t max_nchnls;
+  int32_t isOutput;
+} CS_AUDIODEVICE;
+
+typedef struct {
+  char device_name[128];
+  char interface_name[128];
+  char device_id[128];
+  char midi_module[128];
+  int32_t isOutput;
+} CS_MIDIDEVICE;
+```
+
+### Channel types
+
+```c
+typedef enum {
+  CSOUND_CONTROL_CHANNEL = 1,
+  CSOUND_AUDIO_CHANNEL = 2,
+  CSOUND_STRING_CHANNEL = 3,
+  CSOUND_PVS_CHANNEL = 4,
+  CSOUND_VAR_CHANNEL = 5,
+  CSOUND_ARRAY_CHANNEL = 6,
+  CSOUND_CHANNEL_TYPE_MASK = 15,
+  CSOUND_INPUT_CHANNEL = 16,
+  CSOUND_OUTPUT_CHANNEL = 32
+} controlChannelType;
+```
+
+### Channel hints
+
+```c
+typedef enum {
+  CSOUND_CONTROL_CHANNEL_NO_HINTS = 0,
+  CSOUND_CONTROL_CHANNEL_INT = 1,
+  CSOUND_CONTROL_CHANNEL_LIN = 2,
+  CSOUND_CONTROL_CHANNEL_EXP = 3
+} controlChannelBehavior;
+
+typedef struct controlChannelHints_s {
+  controlChannelBehavior behav;
+  MYFLT dflt;                   // Default value
+  MYFLT min;                    // Minimum value
+  MYFLT max;                    // Maximum value
+  int32_t x, y;                 // Position hints
+  int32_t width, height;        // Size hints
+  char *attributes;             // Must be NULL if unused
+} controlChannelHints_t;
+```
+
+## Preprocessor macros
+
+### Platform visibility
+
+```c
+#if (defined(WIN32) || defined(_WIN32)) && !defined(SWIG)
+#  if defined(__BUILDING_LIBCSOUND)
+#    define PUBLIC __declspec(dllexport)
+#  else
+#    define PUBLIC __declspec(dllimport)
+#  endif
+#elif defined(__GNUC__) && (__GNUC__ >= 4)
+#  define PUBLIC __attribute__((visibility("default")))
+#else
+#  define PUBLIC
+#endif
+```
+
+### Initialization flags
+
+```c
+#define CSOUNDINIT_NO_SIGNAL_HANDLER  1
+#define CSOUNDINIT_NO_ATEXIT          2
+```
+
+### Keyboard callback types
+
+```c
+#define CSOUND_CALLBACK_KBD_EVENT   0x00000001U
+#define CSOUND_CALLBACK_KBD_TEXT    0x00000002U
+```
+
+### Event types
+
+```c
+enum {
+  CS_INSTR_EVENT = 0,           // Instrument event
+  CS_TABLE_EVENT,               // Function table event
+  CS_END_EVENT,                 // End event
+  CS_ADV_EVENT                  // Advance event
+};
+```
+
+### Exit codes
+
+```c
+#define CSOUND_EXITJMP_SUCCESS  256
+```
+
+## Usage context
+
+Host applications should include this header to access the full Csound API:
+
+```c
+#include <csound/csound.h>
+
+int main() {
+  CSOUND *csound = csoundCreate(NULL, NULL);
+  
+  // Configure and use Csound
+  csoundSetOption(csound, "-odac");
+  csoundCompileCSD(csound, "example.csd", 0, 0);
+  csoundStart(csound);
+  
+  while (csoundPerformKsmps(csound) == 0);
+  
+  csoundDestroy(csound);
+  return 0;
+}
+```
+
+## Related headers
+
+The main header automatically includes:
+- `csound_rtaudio.h` - Real-time audio I/O
+- `csound_rtmidi.h` - Real-time MIDI I/O
+- `cfgvar.h` - Configuration variables
+- `msg_attr.h` - Message attributes
+- `version.h` - Version information
+
+## Thread safety
+
+Most API functions are not thread-safe. When accessing channels or shared data from multiple threads:
+- Use `csoundLockChannel()` and `csoundUnlockChannel()`
+- Use atomic operations for control channels when available
+- Avoid concurrent calls to compilation and performance functions
+
+## See also
+
+- [csoundCore.h](/api/headers/csoundcore) - Internal engine structures
+- [Audio I/O](/api/headers/audio-io) - Real-time audio interface
+- [MIDI I/O](/api/headers/midi-io) - Real-time MIDI interface

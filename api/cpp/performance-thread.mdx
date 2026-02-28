@@ -1,0 +1,561 @@
+---
+title: Performance thread
+description: CsoundPerformanceThread class for threaded performance
+---
+
+The `CsoundPerformanceThread` class provides a high-level interface for running Csound performance in a separate thread with playback control, event scheduling, and real-time recording capabilities.
+
+**Location:** `include/csPerfThread.hpp`
+
+## Class definition
+
+```cpp
+class CsoundPerformanceThread {
+public:
+  CsoundPerformanceThread(Csound *);
+  CsoundPerformanceThread(Csound &);
+  CsoundPerformanceThread(CSOUND *);
+  ~CsoundPerformanceThread();
+  
+  // Playback control
+  void Play();
+  void Pause();
+  void TogglePause();
+  void Stop();
+  int32_t Join();
+  
+  // Status
+  int32_t GetStatus();
+  int32_t IsRunning();
+  
+  // Score events
+  void ScoreEvent(int32_t absp2mode, char opcod, int32_t pcnt, const MYFLT *p);
+  void InputMessage(const char *s);
+  
+  // Other methods...
+};
+```
+
+**Location:** `include/csPerfThread.hpp:112`
+
+## Constructors
+
+### From Csound pointer
+
+```cpp
+CsoundPerformanceThread(CSOUND *csound)
+```
+
+Creates a performance thread for the given Csound instance.
+
+**Requirements:**
+- `csoundCompile()` must have been called successfully before creating the thread
+- Performance is paused by default; call `Play()` to start
+
+### From Csound wrapper
+
+```cpp
+CsoundPerformanceThread(Csound *csound)
+CsoundPerformanceThread(Csound &csound)
+```
+
+Convenience constructors accepting C++ `Csound` wrapper objects.
+
+## Playback control
+
+### Play
+
+```cpp
+void Play()
+```
+
+Starts or resumes performance.
+
+**Location:** `include/csPerfThread.hpp:175`
+
+### Pause
+
+```cpp
+void Pause()
+```
+
+Pauses performance. Can be resumed with `Play()`.
+
+**Location:** `include/csPerfThread.hpp:180`
+
+### TogglePause
+
+```cpp
+void TogglePause()
+```
+
+Toggles between playing and paused states.
+
+**Location:** `include/csPerfThread.hpp:186`
+
+### Stop
+
+```cpp
+void Stop()
+```
+
+Stops performance permanently. Cannot be resumed.
+
+**Location:** `include/csPerfThread.hpp:191`
+
+After calling `Stop()`, the performance thread will:
+1. Complete the current k-pass
+2. Call `csoundCleanup()`
+3. Exit the thread
+
+### Join
+
+```cpp
+int32_t Join()
+```
+
+Waits for the performance thread to finish and releases resources.
+
+**Location:** `include/csPerfThread.hpp:254`
+
+**Returns:**
+- Positive value - Normal completion (end of score or `Stop()` called)
+- Negative value - Error occurred
+
+**Important:** Always call `Join()` after `Stop()` or when performance completes.
+
+## Status methods
+
+### GetStatus
+
+```cpp
+int32_t GetStatus()
+```
+
+Returns the current performance status.
+
+**Location:** `include/csPerfThread.hpp:167`
+
+**Returns:**
+- `0` - Still playing
+- Positive value - End of score reached or stopped
+- Negative value - Error occurred
+
+### IsRunning
+
+```cpp
+int32_t IsRunning()
+```
+
+Returns whether the performance thread is running.
+
+**Location:** `include/csPerfThread.hpp:140`
+
+**Returns:**
+- `1` - Thread is running
+- `0` - Thread is not running
+
+## Score events
+
+### ScoreEvent
+
+```cpp
+void ScoreEvent(int32_t absp2mode, char opcod, int32_t pcnt, const MYFLT *p)
+```
+
+Sends a score event to the performance thread.
+
+**Location:** `include/csPerfThread.hpp:210`
+
+**Parameters:**
+- `absp2mode` - If non-zero, p2 time is absolute from start of performance; otherwise relative to current time
+- `opcod` - Event type character (e.g., 'i', 'f', 'e')
+- `pcnt` - Number of p-fields
+- `p` - Array of p-field values (p[0] is p1)
+
+**Example:**
+```cpp
+MYFLT pfields[5] = {1, 0, 1, 440, 0.5};  // i1 0 1 440 0.5
+pt.ScoreEvent(0, 'i', 5, pfields);
+```
+
+### InputMessage
+
+```cpp
+void InputMessage(const char *s)
+```
+
+Sends a score event as a string (similar to `-L` line events).
+
+**Location:** `include/csPerfThread.hpp:215`
+
+**Example:**
+```cpp
+pt.InputMessage("i 1 0 1 440 0.5");
+pt.InputMessage("f 10 0 1024 10 1");
+```
+
+## Recording
+
+### Record
+
+```cpp
+void Record(std::string filename, int32_t samplebits = 16, int32_t numbufs = 4)
+```
+
+Starts recording Csound output to an audio file.
+
+**Location:** `include/csPerfThread.hpp:197`
+
+**Parameters:**
+- `filename` - Output file path
+- `samplebits` - Sample bit depth (default: 16)
+- `numbufs` - Number of buffers (default: 4)
+
+**Note:** Sample rate and channel count are taken from the running Csound instance.
+
+**Example:**
+```cpp
+pt.Record("output.wav", 24);
+```
+
+### StopRecord
+
+```cpp
+void StopRecord()
+```
+
+Stops recording and closes the audio file.
+
+**Location:** `include/csPerfThread.hpp:202`
+
+## Orchestra compilation
+
+### CompileOrc
+
+```cpp
+void CompileOrc(const char *code)
+```
+
+Compiles orchestra code during performance.
+
+**Location:** `include/csPerfThread.hpp:226`
+
+**Example:**
+```cpp
+pt.CompileOrc(R"(
+  instr 100
+    asig oscil 0.5, 440
+    out asig
+  endin
+)");
+pt.InputMessage("i 100 0 1");
+```
+
+### EvalCode
+
+```cpp
+void EvalCode(const char *code, void (*returncb)(MYFLT))
+```
+
+Evaluates code and calls a callback with the return value.
+
+**Location:** `include/csPerfThread.hpp:233`
+
+**Parameters:**
+- `code` - Code to evaluate
+- `returncb` - Callback function receiving the return value
+
+**Example:**
+```cpp
+void printResult(MYFLT val) {
+  printf("Result: %f\n", val);
+}
+
+pt.EvalCode("return sr", printResult);
+```
+
+## Score timing
+
+### SetScoreOffsetSeconds
+
+```cpp
+void SetScoreOffsetSeconds(double timeVal)
+```
+
+Sets the playback time pointer to a specific position.
+
+**Location:** `include/csPerfThread.hpp:220`
+
+**Parameters:**
+- `timeVal` - Time position in seconds
+
+**Example:**
+```cpp
+pt.SetScoreOffsetSeconds(10.0);  // Jump to 10 seconds
+```
+
+## Advanced features
+
+### SetProcessCallback
+
+```cpp
+void SetProcessCallback(void (*Callback)(void *), void *cbdata)
+```
+
+Sets a callback to be invoked during each performance cycle.
+
+**Location:** `include/csPerfThread.hpp:150`
+
+**Parameters:**
+- `Callback` - Function to call each cycle
+- `cbdata` - User data passed to callback
+
+**Example:**
+```cpp
+void processCallback(void *data) {
+  // Custom processing per k-cycle
+  MyData *mydata = (MyData*)data;
+  mydata->counter++;
+}
+
+MyData data;
+pt.SetProcessCallback(processCallback, &data);
+```
+
+### GetProcessCallback
+
+```cpp
+void *GetProcessCallback()
+```
+
+Returns the current process callback as a void pointer.
+
+**Location:** `include/csPerfThread.hpp:145`
+
+### RequestCallback
+
+```cpp
+void RequestCallback(void (*func)(CsoundPerformanceThread *))
+```
+
+Calls the given callback within the context of the performance thread.
+
+**Location:** `include/csPerfThread.hpp:239`
+
+**Example:**
+```cpp
+void myCallback(CsoundPerformanceThread *pt) {
+  // This runs in the performance thread context
+  pt->InputMessage("i 1 0 1");
+}
+
+pt.RequestCallback(myCallback);
+```
+
+### FlushMessageQueue
+
+```cpp
+void FlushMessageQueue()
+```
+
+Waits until all pending messages are received by the performance thread.
+
+**Location:** `include/csPerfThread.hpp:246`
+
+Useful for ensuring events are processed before continuing:
+
+```cpp
+pt.InputMessage("i 1 0 1");
+pt.InputMessage("i 2 0 1");
+pt.FlushMessageQueue();  // Wait for both events to be queued
+```
+
+### GetCsound
+
+```cpp
+CSOUND *GetCsound()
+```
+
+Returns the underlying Csound instance pointer.
+
+**Location:** `include/csPerfThread.hpp:157`
+
+## Complete examples
+
+### Basic usage
+
+```cpp
+#include <csound.hpp>
+#include <csPerfThread.hpp>
+#include <iostream>
+
+int main(int argc, char *argv[]) {
+  Csound cs;
+  
+  // Compile CSD
+  if (cs.Compile(argc, argv) != 0) {
+    std::cerr << "Compilation failed" << std::endl;
+    return 1;
+  }
+  
+  // Create performance thread
+  CsoundPerformanceThread pt(cs.GetCsound());
+  
+  // Start performance
+  pt.Play();
+  
+  // Wait for completion
+  while (pt.GetStatus() == 0) {
+    // Could process events, update UI, etc.
+  }
+  
+  // Cleanup
+  pt.Stop();
+  pt.Join();
+  
+  return 0;
+}
+```
+
+### Interactive control
+
+```cpp
+#include <csound.hpp>
+#include <csPerfThread.hpp>
+#include <thread>
+#include <chrono>
+
+int main() {
+  Csound cs;
+  
+  cs.SetOption("-odac");
+  cs.CompileOrc(R"(
+    sr = 44100
+    ksmps = 64
+    nchnls = 2
+    0dbfs = 1
+    
+    instr 1
+      kfreq chnget "freq"
+      asig oscil 0.3, kfreq
+      out asig, asig
+    endin
+  )");
+  cs.Start();
+  
+  CsoundPerformanceThread pt(cs.GetCsound());
+  pt.Play();
+  
+  // Trigger note
+  pt.InputMessage("i 1 0 10");
+  
+  // Modulate frequency over time
+  for (int i = 0; i < 100; i++) {
+    MYFLT freq = 220 + i * 4;
+    cs.SetControlChannel("freq", freq);
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  }
+  
+  pt.Stop();
+  pt.Join();
+  
+  return 0;
+}
+```
+
+### With recording
+
+```cpp
+#include <csound.hpp>
+#include <csPerfThread.hpp>
+
+int main() {
+  Csound cs;
+  
+  cs.Compile("mypiece.csd");
+  
+  CsoundPerformanceThread pt(cs.GetCsound());
+  
+  // Start recording
+  pt.Record("output.wav", 24, 8);
+  
+  // Play the piece
+  pt.Play();
+  
+  while (pt.GetStatus() == 0);
+  
+  // Stop recording
+  pt.StopRecord();
+  
+  pt.Stop();
+  pt.Join();
+  
+  return 0;
+}
+```
+
+### Event scheduling
+
+```cpp
+#include <csound.hpp>
+#include <csPerfThread.hpp>
+#include <thread>
+#include <chrono>
+
+void schedulerThread(CsoundPerformanceThread *pt) {
+  // Schedule notes in a separate thread
+  for (int i = 0; i < 8; i++) {
+    MYFLT pfields[5];
+    pfields[0] = 1;                    // p1: instrument
+    pfields[1] = 0;                    // p2: start time (relative)
+    pfields[2] = 0.5;                  // p3: duration
+    pfields[3] = 220 * (i + 1);        // p4: frequency
+    pfields[4] = 0.3;                  // p5: amplitude
+    
+    pt->ScoreEvent(0, 'i', 5, pfields);
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+  }
+}
+
+int main() {
+  Csound cs;
+  cs.Compile("instrument.csd");
+  
+  CsoundPerformanceThread pt(cs.GetCsound());
+  pt.Play();
+  
+  // Start scheduler in separate thread
+  std::thread scheduler(schedulerThread, &pt);
+  
+  // Wait for performance
+  while (pt.GetStatus() == 0 || !pt.IsRunning());
+  
+  scheduler.join();
+  pt.Stop();
+  pt.Join();
+  
+  return 0;
+}
+```
+
+## Thread safety
+
+The `CsoundPerformanceThread` class uses internal locking to ensure thread-safe communication:
+
+- All public methods can be safely called from any thread
+- Messages are queued and processed by the performance thread
+- Use `FlushMessageQueue()` to ensure synchronization when needed
+
+## Notes
+
+- The performance thread automatically calls `csoundCleanup()` when stopping
+- Always call `Join()` before destroying the object
+- Default state after construction is **paused** - must call `Play()` to start
+- The thread continues until end of score, `Stop()` is called, or an error occurs
+
+## See also
+
+- [Csound class](/api/cpp/csound-class)
+- [Threading guide](/guides/threading)
+- [Real-time audio](/guides/realtime)

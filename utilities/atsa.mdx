@@ -1,0 +1,129 @@
+---
+title: atsa
+description: ATSA analysis utility for ATS spectral analysis
+---
+
+The `atsa` utility performs ATS (Analysis-Transformation-Synthesis) spectral analysis on sound files. ATS is a sinusoidal modeling technique that separates sounds into deterministic (tonal) and stochastic (noise) components.
+
+## Syntax
+
+```bash
+atsa soundfile atsfile [flags]
+```
+
+## Arguments
+
+- `soundfile` - Input sound file to analyze
+- `atsfile` - Output ATS analysis file
+
+## Options
+
+### Time and frequency range
+
+| Option | Description | Default |
+|--------|-------------|----------|
+| `-b` | Start time in seconds | 0.0 |
+| `-e` | Duration in seconds (or end time) | 0.0 (entire file) |
+| `-l` | Lowest frequency in Hertz | 20.0 |
+| `-H` | Highest frequency in Hertz | 20000.0 |
+
+### Analysis parameters
+
+| Option | Description | Default |
+|--------|-------------|----------|
+| `-d` | Frequency deviation (ratio of partial frequency) | 0.1 |
+| `-c` | Window cycles | 4 |
+| `-w` | Window type (0=Blackman, 1=Blackman-Harris, 2=Hamming, 3=von Hann) | 1 |
+| `-h` | Hop size (ratio of window size) | 0.25 |
+| `-m` | Lowest magnitude in dB | -60.0 |
+
+### Tracking parameters
+
+| Option | Description | Default |
+|--------|-------------|----------|
+| `-t` | Track length in frames | 3 |
+| `-s` | Minimum segment length in frames | 3 |
+| `-g` | Minimum gap length in frames | 3 |
+| `-T` | SMR (Signal-to-Mask Ratio) threshold in dB SPL | 30.0 |
+| `-S` | Minimum segment SMR in dB SPL | 60.0 |
+| `-P` | Last peak contribution (ratio) | 0.0 |
+| `-M` | SMR contribution (ratio) | 0.5 |
+
+### Output format
+
+| Option | Description | Default |
+|--------|-------------|----------|
+| `-F` | File type:<br/>1 = amplitude and frequency only<br/>2 = amplitude, frequency, and phase<br/>3 = amplitude, frequency, and noise<br/>4 = amplitude, frequency, phase, and noise | 4 |
+
+## Examples
+
+### Basic analysis
+
+```bash
+atsa input.wav output.ats
+```
+
+### Analysis with custom frequency range
+
+```bash
+atsa input.wav output.ats -l 100 -H 8000
+```
+
+### High-quality analysis with fine time resolution
+
+```bash
+atsa input.wav output.ats -c 8 -h 0.125 -m -80
+```
+
+### Analysis without noise residual
+
+```bash
+atsa input.wav output.ats -F 2
+```
+
+### Analyze specific time segment
+
+```bash
+atsa input.wav output.ats -b 2.5 -e 10.0
+```
+
+## Output file format
+
+The ATS file contains:
+
+- **Type 1**: Amplitude and frequency tracks for each partial
+- **Type 2**: Adds phase information for phase-coherent resynthesis
+- **Type 3**: Adds critical-band noise energy for stochastic residual
+- **Type 4**: Complete analysis with all parameters
+
+## Technical details
+
+### Window types
+
+- **Blackman (0)**: Good frequency resolution with moderate sidelobe rejection
+- **Blackman-Harris (1)**: Excellent sidelobe rejection (default, recommended)
+- **Hamming (2)**: Better frequency resolution but higher sidelobes
+- **von Hann (3)**: Standard window with moderate characteristics
+
+### Analysis parameters
+
+- **Frequency deviation**: Controls how much a partial's frequency can change between frames while still being tracked as the same partial
+- **Window cycles**: Number of fundamental frequency cycles in the analysis window; affects frequency resolution
+- **Hop size**: Determines time resolution; smaller values give better time resolution but slower analysis
+- **SMR threshold**: Signal-to-Mask Ratio used to distinguish tonal components from noise
+
+## Using ATS files in Csound
+
+ATS analysis files can be used with Csound opcodes:
+
+- `atsread` - Read ATS analysis data
+- `atsadd` - Additive synthesis from ATS data
+- `atssinnoi` - Separate synthesis of sinusoidal and noise components
+- `atsinfo` - Get information about an ATS file
+- `atscross` - Cross-synthesis between ATS files
+
+## Related utilities
+
+- [pvanal](/utilities/pvanal) - Phase vocoder analysis
+- [hetro](/utilities/hetro) - Heterodyne analysis
+- [lpanal](/utilities/lpanal) - LPC analysis

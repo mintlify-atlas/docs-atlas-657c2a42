@@ -1,0 +1,358 @@
+---
+title: Mobile build instructions
+description: Build Csound for iOS and Android platforms
+---
+
+## iOS
+
+Build Csound as an XCFramework for iOS devices and simulators.
+
+### Prerequisites
+
+- macOS with Xcode installed
+- Homebrew (for installing bison and flex)
+- CMake
+
+### Building for iOS
+
+<Steps>
+  <Step title="Install dependencies">
+    Install required build tools:
+
+    ```bash
+    brew install bison flex
+    ```
+  </Step>
+
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/csound/csound.git
+    cd csound
+    ```
+  </Step>
+
+  <Step title="Build libsndfile">
+    iOS requires libsndfile to be built for the iOS targets:
+
+    ```bash
+    cd iOS
+    chmod +x build_libsndfile.sh
+    ./build_libsndfile.sh
+    ```
+  </Step>
+
+  <Step title="Build Csound for iOS">
+    ```bash
+    ./build.sh
+    ```
+
+    This script:
+    - Configures CMake for iOS with both arm64 (device) and x86_64 (simulator) architectures
+    - Builds Csound as a static library
+    - Creates an XCFramework combining both architectures
+    - Copies necessary headers and resources
+  </Step>
+
+  <Step title="Create release package (optional)">
+    ```bash
+    ./release.sh
+    ```
+
+    This creates a zip file containing the iOS build in `Csound-For-iOS/`.
+  </Step>
+</Steps>
+
+### Build script details
+
+The iOS build process uses several key CMake options:
+
+```bash
+cmake ../.. -G Xcode \
+  -DCMAKE_PREFIX_PATH="$PWD/.." \
+  -DUSE_GETTEXT=0 \
+  -DUSE_DOUBLE=0 \
+  -DBUILD_STATIC_LIBRARY=1 \
+  -DBUILD_RELEASE=0 \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DUSE_CURL=0 \
+  -DUSE_SSE=0 \
+  -DIOS=1 \
+  -DBUILD_TESTS=0 \
+  -DCUSTOM_CMAKE="../custom.cmake.ios" \
+  -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+```
+
+The build produces:
+- `libCsoundLib.a` - Static library for iOS
+- `CsoundiOS.xcframework` - XCFramework for use in Xcode projects
+- Headers in the XCFramework including `iOSCsound.hpp`
+
+### Using the XCFramework in your project
+
+1. Copy `CsoundiOS.xcframework` from `iOS/Csound-iOS/xcframeworks/` to your Xcode project
+2. In Xcode, add the XCFramework to your target:
+   - Select your target → General → Frameworks, Libraries, and Embedded Content
+   - Click + and add `CsoundiOS.xcframework`
+   - Set "Embed" to "Do Not Embed" (it's a static framework)
+
+### Cross-compiling iOS on Linux
+
+You can cross-compile for iOS on Linux using the ioscross toolchain:
+
+<Steps>
+  <Step title="Set up Docker container">
+    Csound provides a Docker image with the ioscross toolchain:
+
+    ```bash
+    docker pull ghcr.io/csound/csound-ioscross:v1
+    ```
+  </Step>
+
+  <Step title="Clone and prepare">
+    ```bash
+    git clone --recurse-submodules https://github.com/csound/csound.git
+    cd csound
+    ./vcpkg/bootstrap-vcpkg.sh
+    ```
+  </Step>
+
+  <Step title="Configure build in container">
+    ```bash
+    docker run --rm \
+      -v "$PWD:$PWD" \
+      --workdir "$PWD" \
+      ghcr.io/csound/csound-ioscross:v1 \
+      /bin/sh -lc '
+        $(eval /ioscross/arm64/ioscross_conf.sh)
+        cmake -B build/arm64 -S . -DUSE_VCPKG=1 \
+            -DCUSTOM_CMAKE=./platform/ioscross/custom-ios.cmake \
+            -DIOS=1 \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DOSXCROSS_SDK=${OSXCROSS_SDK} \
+            -DOSXCROSS_TARGET=${OSXCROSS_TARGET} \
+            -Darch=arm64 \
+            -DCMAKE_OSX_ARCHITECTURES=arm64
+      '
+    ```
+  </Step>
+
+  <Step title="Build">
+    ```bash
+    docker run --rm \
+      -v "$PWD:$PWD" \
+      --workdir "$PWD" \
+      ghcr.io/csound/csound-ioscross:v1 \
+      /bin/sh -lc '
+        $(eval /ioscross/arm64/ioscross_conf.sh)
+        cmake --build build/arm64 --config Release
+      '
+    ```
+  </Step>
+</Steps>
+
+## Android
+
+Build Csound for Android using Android Studio and the NDK.
+
+### Prerequisites
+
+- **Android Studio**: [developer.android.com/studio](https://developer.android.com/studio/)
+- **Android NDK**: [developer.android.com/ndk](https://developer.android.com/ndk/)
+
+### Setting up environment
+
+Before building, set the following environment variables:
+
+```bash
+export ANDROID_NDK_ROOT=/path/to/ndk
+export NDK_MODULE_PATH=/path/to/ndk/modules
+```
+
+### Building for Android
+
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/csound/csound.git
+    cd csound/Android
+    ```
+  </Step>
+
+  <Step title="Download dependencies">
+    ```bash
+    sh downloadDependencies.sh
+    ```
+
+    This downloads required NDK modules and libraries.
+  </Step>
+
+  <Step title="Build JNI libraries">
+    ```bash
+    cd CsoundAndroid
+    sh build.sh
+    ```
+
+    This builds:
+    - Csound JNI libraries for multiple architectures (armeabi-v7a, arm64-v8a, x86, x86_64)
+    - Java interface classes
+  </Step>
+
+  <Step title="Update Android Studio project (optional)">
+    ```bash
+    cd ..
+    sh update.sh
+    ```
+
+    This updates the CsoundAndroid project in `CsoundForAndroid/` with the newly built libraries.
+  </Step>
+
+  <Step title="Create release package (optional)">
+    ```bash
+    sh release.sh
+    ```
+
+    Creates a release package containing the CsoundForAndroid Android Studio project.
+  </Step>
+</Steps>
+
+### Project structure
+
+- **CsoundAndroid**: Android Csound JNI and Java interface sources
+- **CsoundForAndroid**: Android Studio projects (CsoundAndroid and CsoundAndroidExamples)
+- **docs**: Documentation
+
+### Using in Android Studio
+
+After building:
+
+1. The JNI libraries are in `./CsoundAndroid/libs/`
+2. The Java sources are in `./CsoundAndroid/src/`
+3. Import the `CsoundAndroid` module into your Android Studio project as a dependency
+
+### Cross-compiling Android on Linux
+
+You can cross-compile for Android on Linux using vcpkg and the Android NDK:
+
+<Steps>
+  <Step title="Prepare build environment">
+    ```bash
+    git clone --recurse-submodules https://github.com/csound/csound.git
+    cd csound
+    ./vcpkg/bootstrap-vcpkg.sh
+    ```
+  </Step>
+
+  <Step title="Build with Docker (recommended)">
+    Csound provides a Docker image with the Android NDK:
+
+    ```bash
+    docker pull ghcr.io/csound/csound-android:v1
+
+    # Configure for all Android architectures
+    docker run --rm \
+      -v "$PWD:$PWD" \
+      --workdir "$PWD" \
+      ghcr.io/csound/csound-android:v1 \
+      /bin/sh -lc '
+        for ARCH in arm arm64 x86 x64; do
+            cmake -B build/$ARCH -S . -DUSE_VCPKG=1 \
+                -DCUSTOM_CMAKE=./platform/android/custom-android.cmake \
+                -DCMAKE_SYSTEM_NAME=Android \
+                -DANDROID=1 \
+                -DCMAKE_TARGET_ARCHITECTURE=${ARCH}
+        done
+      '
+
+    # Build all architectures
+    docker run --rm \
+      -v "$PWD:$PWD" \
+      --workdir "$PWD" \
+      ghcr.io/csound/csound-android:v1 \
+      /bin/sh -lc '
+        for ARCH in arm arm64 x86 x64; do
+          cmake --build build/$ARCH --config Release
+        done
+      '
+    ```
+  </Step>
+</Steps>
+
+### Manual NDK build
+
+If you prefer to build without Docker:
+
+```bash
+# Set up NDK paths
+export ANDROID_NDK_ROOT=/path/to/android-ndk
+
+# Configure for ARM64
+cmake -B build/arm64 -S . \
+  -DCMAKE_SYSTEM_NAME=Android \
+  -DANDROID_NDK=$ANDROID_NDK_ROOT \
+  -DANDROID_ABI=arm64-v8a \
+  -DANDROID_PLATFORM=android-21 \
+  -DCMAKE_ANDROID_ARCH_ABI=arm64-v8a \
+  -DCMAKE_ANDROID_NDK=$ANDROID_NDK_ROOT \
+  -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
+  -DUSE_VCPKG=1 \
+  -DCUSTOM_CMAKE=./platform/android/custom-android.cmake
+
+# Build
+cmake --build build/arm64 --config Release
+```
+
+Repeat for other architectures: `armeabi-v7a`, `x86`, `x86_64`.
+
+## Troubleshooting
+
+### iOS: Bison version too old
+
+Ensure Homebrew's bison is in your PATH:
+
+```bash
+export PATH="/opt/homebrew/opt/bison/bin:$PATH"
+```
+
+### iOS: Framework build fails
+
+Make sure libsndfile was built first:
+
+```bash
+cd iOS
+./build_libsndfile.sh
+```
+
+### Android: NDK not found
+
+Set the `ANDROID_NDK_ROOT` environment variable:
+
+```bash
+export ANDROID_NDK_ROOT=/path/to/android-ndk
+```
+
+On macOS, if installed via Android Studio:
+
+```bash
+export ANDROID_NDK_ROOT="$HOME/Library/Android/sdk/ndk/<version>"
+```
+
+### Android: Build script not executable
+
+Make scripts executable:
+
+```bash
+chmod +x downloadDependencies.sh
+chmod +x CsoundAndroid/build.sh
+chmod +x update.sh
+chmod +x release.sh
+```
+
+### Android: Java version incompatibility
+
+Ensure you're using Java 11 or later:
+
+```bash
+java -version
+```
+
+If needed, set `JAVA_HOME` to point to the correct JDK.

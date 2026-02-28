@@ -1,0 +1,52 @@
+---
+title: Utilities overview
+description: Command-line utilities for audio analysis and processing in Csound
+---
+
+Csound includes a comprehensive set of command-line utilities for audio file analysis, conversion, and processing. These utilities are designed to work alongside the main Csound system and provide specialized functionality for audio signal processing tasks.
+
+## Analysis utilities
+
+These utilities perform various types of spectral and time-domain analysis on audio files:
+
+- [**atsa**](/utilities/atsa) - ATS (Analysis-Transformation-Synthesis) analysis for sinusoidal modeling
+- [**pvanal**](/utilities/pvanal) - Phase vocoder analysis for time-frequency domain processing
+- [**lpanal**](/utilities/lpanal) - Linear predictive coding (LPC) analysis for speech and sound modeling
+- [**hetro**](/utilities/hetro) - Heterodyne filter analysis for fixed-frequency harmonic decomposition
+- [**cvanal**](/utilities/cvanal) - Convolution analysis for impulse response processing
+
+## File information and conversion
+
+Utilities for examining and converting audio files:
+
+- [**sndinfo**](/utilities/sndinfo) - Display detailed information about sound files
+- [**srconv**](/utilities/srconv) - High-quality sample rate conversion
+
+## Audio processing
+
+Utilities for audio manipulation and mixing:
+
+- [**mixer**](/utilities/mixer) - Mix multiple sound files with arbitrary start times and gain curves
+- [**scale**](/utilities/scale) - Scale audio file amplitude by constant or time-varying factors
+
+## Common features
+
+Most Csound utilities share these common characteristics:
+
+- **Command-line interface** - All utilities are invoked from the terminal
+- **Standard options** - Many utilities support similar flags for file I/O and format specification
+- **File format support** - Support for various audio formats including WAV, AIFF, and raw formats
+- **Channel selection** - Ability to process specific channels from multi-channel files
+- **Time windowing** - Options to analyze specific time segments of audio files
+
+## Getting help
+
+Most utilities display usage information when run without arguments or with invalid options:
+
+```bash
+atsa
+pvanal
+lpanal
+```
+
+This will show available command-line options and their default values.

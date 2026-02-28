@@ -1,0 +1,329 @@
+---
+title: csound_compiler.h
+description: Lower-level parsing and compilation interface
+---
+
+The `csound_compiler.h` header provides low-level access to Csound's parser and compiler. It allows programmatic manipulation of orchestra code as abstract syntax trees (AST).
+
+## Overview
+
+This header enables:
+- Parsing orchestra code into AST structures
+- Compiling AST nodes into executable code
+- Dynamic code generation and manipulation
+- Advanced metaprogramming techniques
+
+## Key structures
+
+### Orchestra token
+
+```c
+typedef struct ORCTOKEN {
+  int32_t type;                 // Token type
+  char *lexeme;                 // Token text
+  int32_t value;                // Integer value
+  double fvalue;                // Float value
+  char *optype;                 // Operator type
+  uint32_t first_column;        // Start column
+  uint32_t last_column;         // End column
+  struct ORCTOKEN *next;        // Next token
+} ORCTOKEN;
+```
+
+Represents a single lexical token from the orchestra source code.
+
+### Abstract syntax tree node
+
+```c
+typedef struct TREE {
+  int32_t type;                 // Node type
+  ORCTOKEN *value;              // Token value
+  int32_t rate;                 // Signal rate (i/k/a)
+  int32_t len;                  // Node length
+  int32_t line;                 // Source line number
+  uint64_t locn;                // File location
+  struct TREE *left;            // Left child
+  struct TREE *right;           // Right child
+  struct TREE *next;            // Next sibling
+  void *markup;                 // Semantic markup (temporary)
+} TREE;
+```
+
+Represents a node in the abstract syntax tree. The tree structure captures the syntactic and semantic organization of orchestra code.
+
+**Tree structure:**
+- Binary tree with `left` and `right` children
+- Siblings linked via `next` pointer
+- Annotated with rate information for type checking
+- Markup field used by semantic checker (transitional)
+
+## API functions
+
+### Parse orchestra code
+
+```c
+PUBLIC TREE *csoundParseOrc(CSOUND *csound, const char *str);
+```
+
+**Parameters:**
+- `csound` - Csound instance
+- `str` - Orchestra code as ASCII string
+
+**Returns:**
+- Pointer to root TREE node on success
+- NULL on parse error
+
+**Description:**
+Parses the given orchestra code into an abstract syntax tree. This can be called during performance to parse new code dynamically.
+
+**Usage:**
+```c
+const char *code = "instr 1\na1 oscil 0.5, 440\nout a1\nendin";
+TREE *ast = csoundParseOrc(csound, code);
+if (ast == NULL) {
+  // Parse error
+}
+```
+
+### Compile AST to structs
+
+```c
+PUBLIC int32_t csoundCompileTree(CSOUND *csound, TREE *root, int32_t async);
+```
+
+**Parameters:**
+- `csound` - Csound instance
+- `root` - Root node of AST to compile
+- `async` - 0 for synchronous, 1 for asynchronous compilation
+
+**Returns:**
+- `CSOUND_SUCCESS` (0) on success
+- Negative error code on failure
+
+**Description:**
+Compiles the given TREE node into internal structures that Csound can execute. In asynchronous mode, compilation happens in a separate thread.
+
+**Usage:**
+```c
+TREE *ast = csoundParseOrc(csound, code);
+if (ast != NULL) {
+  int result = csoundCompileTree(csound, ast, 0);
+  if (result != CSOUND_SUCCESS) {
+    // Compilation error
+  }
+}
+```
+
+### Free AST resources
+
+```c
+PUBLIC void csoundDeleteTree(CSOUND *csound, TREE *tree);
+```
+
+**Parameters:**
+- `csound` - Csound instance
+- `tree` - Root node of tree to delete
+
+**Description:**
+Frees all resources associated with the given AST. This should be called whenever a TREE created with `csoundParseOrc()` is no longer needed and can be deallocated.
+
+**Usage:**
+```c
+TREE *ast = csoundParseOrc(csound, code);
+// Use the tree...
+csoundDeleteTree(csound, ast);
+```
+
+## Usage patterns
+
+### Parse, compile, and cleanup
+
+```c
+const char *orchestra = 
+  "instr 1\n"
+  "  asig oscil p4, p5\n"
+  "  out asig\n"
+  "endin\n";
+
+// Parse
+TREE *ast = csoundParseOrc(csound, orchestra);
+if (ast == NULL) {
+  fprintf(stderr, "Parse error\n");
+  return -1;
+}
+
+// Compile
+int result = csoundCompileTree(csound, ast, 0);
+if (result != CSOUND_SUCCESS) {
+  fprintf(stderr, "Compile error: %d\n", result);
+  csoundDeleteTree(csound, ast);
+  return -1;
+}
+
+// Cleanup
+csoundDeleteTree(csound, ast);
+```
+
+### Dynamic code generation
+
+```c
+// Generate code programmatically
+char code[1024];
+snprintf(code, sizeof(code),
+  "instr %d\n"
+  "  a1 oscil %f, %f\n"
+  "  out a1\n"
+  "endin\n",
+  instr_num, amplitude, frequency);
+
+// Parse and compile
+TREE *ast = csoundParseOrc(csound, code);
+if (ast != NULL) {
+  csoundCompileTree(csound, ast, 0);
+  csoundDeleteTree(csound, ast);
+}
+```
+
+### Asynchronous compilation
+
+```c
+TREE *ast = csoundParseOrc(csound, code);
+if (ast != NULL) {
+  // Compile in background
+  csoundCompileTree(csound, ast, 1);
+  
+  // Continue with other work...
+  
+  // Cleanup (ensure compilation is done first)
+  csoundDeleteTree(csound, ast);
+}
+```
+
+## Compilation modes
+
+### Synchronous (async = 0)
+
+- Blocks until compilation completes
+- Safe for immediate use of compiled code
+- Recommended for most use cases
+
+### Asynchronous (async = 1)
+
+- Returns immediately, compilation in background
+- Useful for non-blocking UI
+- Must ensure compilation completes before use
+- Thread-safe with Csound's internal locking
+
+## Tree node types
+
+The `type` field in TREE nodes represents different syntactic elements:
+- Instrument definitions
+- Opcode statements
+- Expressions (arithmetic, logical)
+- Variable references
+- Constants
+- Control structures (if/else, loops)
+
+## Rate annotations
+
+The `rate` field indicates signal rate:
+- **i-rate**: Initialization time only
+- **k-rate**: Control rate (per k-period)
+- **a-rate**: Audio rate (per sample)
+- **Mixed**: Determined by context
+
+## Memory management
+
+Important considerations:
+
+1. **Always free trees**: Call `csoundDeleteTree()` for every `csoundParseOrc()`
+2. **Timing**: Free after successful compilation
+3. **Error handling**: Free even on compilation errors
+4. **Ownership**: Tree memory owned by Csound instance
+
+## Error handling
+
+```c
+TREE *ast = csoundParseOrc(csound, code);
+if (ast == NULL) {
+  // Parse failed - syntax error in code
+  const char *err = csoundGetFirstMessage(csound);
+  // Handle error...
+  return -1;
+}
+
+int result = csoundCompileTree(csound, ast, 0);
+if (result != CSOUND_SUCCESS) {
+  // Compilation failed - semantic error
+  csoundDeleteTree(csound, ast);
+  return -1;
+}
+
+// Success
+csoundDeleteTree(csound, ast);
+```
+
+## Performance considerations
+
+- Parsing is relatively fast
+- Compilation can be expensive for large instruments
+- Use asynchronous mode for large code blocks
+- Cache parsed trees if recompiling frequently
+- Tree traversal is depth-first
+
+## Use cases
+
+### Code generation tools
+
+Generate Csound code from:
+- Visual programming interfaces
+- Algorithmic composition systems
+- Domain-specific languages
+- Templates with parameters
+
+### Live coding
+
+Enable dynamic orchestra modification:
+- Parse and compile on-the-fly
+- Add instruments during performance
+- Modify existing definitions
+- Interactive development
+
+### Metaprogramming
+
+Create code that generates code:
+- Macro expansion
+- Code transformations
+- Optimization passes
+- Analysis tools
+
+### Testing and validation
+
+Build development tools:
+- Syntax validators
+- Static analyzers
+- Code formatters
+- Documentation generators
+
+## Limitations
+
+- Markup field is temporary/transitional
+- Tree modification not officially supported
+- Limited introspection of node types
+- No direct access to symbol tables
+
+## Thread safety
+
+Parsing and compilation are protected by Csound's internal locks. Multiple threads can safely:
+- Parse different code strings
+- Compile to the same Csound instance
+- Mix synchronous and asynchronous calls
+
+However, avoid:
+- Modifying trees from multiple threads
+- Freeing trees during compilation
+
+## See also
+
+- [csound.h](/api/headers/csound) - Main API for compilation
+- [csoundCore.h](/api/headers/csoundcore) - Internal structures

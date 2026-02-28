@@ -1,0 +1,551 @@
+---
+title: C++ bindings
+description: Object-oriented C++ interface to Csound
+---
+
+The Csound C++ API provides an object-oriented wrapper around the C API with RAII semantics, making it easier and safer to use Csound in C++ applications.
+
+## Header files
+
+```cpp
+#include <csound/csound.hpp>
+#include <csound/csPerfThread.hpp>  // For threaded performance
+```
+
+## Csound class
+
+The main `Csound` class wraps the C API with C++ conveniences:
+
+```cpp
+class Csound {
+public:
+    Csound();  // Constructor
+    virtual ~Csound();  // Destructor (calls csoundDestroy)
+    
+    virtual CSOUND *GetCsound();  // Get underlying C pointer
+    virtual void SetCsound(CSOUND *csound);
+    
+    // Compilation
+    virtual int32_t CompileOrc(const char *str, int32_t async = 0);
+    virtual MYFLT EvalCode(const char *str);
+    virtual int32_t CompileCSD(const char *path);
+    
+    // Performance
+    virtual int32_t Start();
+    virtual int32_t PerformKsmps();
+    virtual void Reset();
+    
+    // Attributes
+    virtual int32_t GetVersion();
+    virtual MYFLT GetSr();
+    virtual MYFLT GetKr();
+    virtual uint32_t GetKsmps();
+    virtual uint32_t GetChannels(int32_t isInput = 0);
+    virtual MYFLT Get0dBFS();
+    
+    // And many more methods...
+};
+```
+
+## Basic usage
+
+### Creating an instance
+
+```cpp
+#include <csound/csound.hpp>
+#include <iostream>
+
+int main() {
+    Csound csound;  // Automatic initialization
+    
+    int version = csound.GetVersion();
+    std::cout << "Csound version: " << version / 1000.0 << std::endl;
+    
+    // Csound instance automatically destroyed when leaving scope
+    return 0;
+}
+```
+
+### Compiling and performing
+
+```cpp
+#include <csound/csound.hpp>
+#include <iostream>
+
+int main(int argc, char *argv[]) {
+    Csound csound;
+    
+    // Set options
+    csound.SetOption("-odac");  // Audio output to DAC
+    csound.SetOption("-m0");    // No messages
+    
+    // Compile CSD file
+    int result = csound.CompileCSD("myfile.csd");
+    if (result != CSOUND_SUCCESS) {
+        std::cerr << "Compilation failed" << std::endl;
+        return 1;
+    }
+    
+    // Start performance
+    result = csound.Start();
+    if (result != CSOUND_SUCCESS) {
+        std::cerr << "Failed to start" << std::endl;
+        return 1;
+    }
+    
+    // Performance loop
+    while (csound.PerformKsmps() == 0) {
+        // Process one k-period
+    }
+    
+    return 0;
+}
+```
+
+### Compiling orchestra code
+
+```cpp
+Csound csound;
+
+const char *orc = R"(
+    sr = 44100
+    ksmps = 64
+    nchnls = 2
+    0dbfs = 1
+    
+    instr 1
+        kfreq = p4
+        asig oscils 0.5, kfreq, 0
+        outs asig, asig
+    endin
+)";
+
+csound.CompileOrc(orc);
+csound.Start();
+
+// Send score event
+csound.EventString("i 1 0 2 440", false);
+
+// Perform
+while (csound.PerformKsmps() == 0);
+```
+
+## Channels
+
+### Control channels
+
+```cpp
+Csound csound;
+
+// Orchestra with control channels
+const char *orc = R"(
+    instr 1
+        kfreq chnget "frequency"
+        kvol chnget "volume"
+        asig oscils kvol, kfreq, 0
+        outs asig, asig
+        
+        kout = kfreq * 2
+        chnset kout, "output"
+    endin
+)";
+
+csound.CompileOrc(orc);
+csound.Start();
+csound.EventString("i 1 0 10", false);
+
+// Set input channels
+csound.SetControlChannel("frequency", 440.0);
+csound.SetControlChannel("volume", 0.8);
+
+// Performance loop
+while (csound.PerformKsmps() == 0) {
+    // Read output channel
+    MYFLT output = csound.GetControlChannel("output");
+    std::cout << "Output: " << output << std::endl;
+}
+```
+
+### Direct channel access
+
+For better performance, get direct pointers to channels:
+
+```cpp
+MYFLT *freqChannel;
+int result = csound.GetChannelPtr(&freqChannel, "frequency",
+                                  CSOUND_CONTROL_CHANNEL | CSOUND_INPUT_CHANNEL);
+
+if (result == CSOUND_SUCCESS) {
+    // Direct write (very fast)
+    *freqChannel = 440.0;
+}
+
+while (csound.PerformKsmps() == 0) {
+    // Modify frequency in real-time
+    *freqChannel += 1.0;
+}
+```
+
+## Audio I/O
+
+### Processing audio buffers
+
+```cpp
+Csound csound;
+
+// Setup and compilation...
+csound.Start();
+
+uint32_t ksmps = csound.GetKsmps();
+uint32_t nchnls = csound.GetChannels(0);
+MYFLT *spout = csound.GetSpout();
+
+std::vector<float> outputBuffer(ksmps * nchnls);
+
+while (csound.PerformKsmps() == 0) {
+    // Copy audio to output buffer
+    for (uint32_t i = 0; i < ksmps * nchnls; i++) {
+        outputBuffer[i] = static_cast<float>(spout[i]);
+    }
+    
+    // Send to audio system...
+}
+```
+
+### Processing input
+
+```cpp
+MYFLT *spin = csound.GetSpin();
+uint32_t nchnls_i = csound.GetChannels(1);  // Input channels
+
+std::vector<float> inputBuffer(ksmps * nchnls_i);
+
+while (csound.PerformKsmps() == 0) {
+    // Get audio from input source...
+    
+    // Copy to Csound input buffer
+    for (uint32_t i = 0; i < ksmps * nchnls_i; i++) {
+        spin[i] = static_cast<MYFLT>(inputBuffer[i]);
+    }
+}
+```
+
+## Score events
+
+### String events
+
+```cpp
+Csound csound;
+
+// Setup...
+csound.Start();
+
+// Send i-statement
+csound.EventString("i 1 0 2 440", false);
+csound.EventString("i 1 + 2 550", false);  // '+' means after previous
+csound.EventString("i 1 0.5 1 660", false);
+
+while (csound.PerformKsmps() == 0);
+```
+
+### Array events
+
+```cpp
+// Create event as array of p-fields
+MYFLT pfields[] = {
+    1,    // p1: instrument number
+    0,    // p2: start time
+    2,    // p3: duration
+    440   // p4: frequency
+};
+
+csound.Event(CS_INSTR_EVENT, pfields, 4, false);
+```
+
+## Tables
+
+### Reading table data
+
+```cpp
+Csound csound;
+
+// Create a table
+const char *orc = "giSine ftgen 1, 0, 1024, 10, 1";
+csound.CompileOrc(orc);
+csound.Start();
+
+// Get table pointer
+MYFLT *table;
+int length = csound.GetTable(&table, 1);
+
+if (length > 0) {
+    std::cout << "Table length: " << length << std::endl;
+    
+    // Read table values
+    for (int i = 0; i < std::min(10, length); i++) {
+        std::cout << "table[" << i << "] = " << table[i] << std::endl;
+    }
+}
+```
+
+### Writing table data
+
+```cpp
+MYFLT *table;
+int length = csound.GetTable(&table, 1);
+
+// Write new values
+for (int i = 0; i < length; i++) {
+    table[i] = std::sin(2.0 * M_PI * i / length);
+}
+```
+
+## Performance thread
+
+The `CsoundPerformanceThread` class provides threaded performance:
+
+```cpp
+#include <csound/csound.hpp>
+#include <csound/csPerfThread.hpp>
+#include <iostream>
+#include <thread>
+#include <chrono>
+
+int main() {
+    Csound csound;
+    
+    // Compile
+    csound.SetOption("-odac");
+    int result = csound.CompileCSD("myfile.csd");
+    if (result != CSOUND_SUCCESS) {
+        std::cerr << "Compilation failed" << std::endl;
+        return 1;
+    }
+    
+    // Create performance thread
+    CsoundPerformanceThread perfThread(csound.GetCsound());
+    
+    // Start performance in separate thread
+    perfThread.Play();
+    
+    // Main thread can do other things
+    for (int i = 0; i < 10; i++) {
+        std::cout << "Main thread working... " << i << std::endl;
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        
+        // Send events to Csound
+        float freq = 440.0 + i * 50;
+        char event[64];
+        snprintf(event, sizeof(event), "i 1 0 0.5 %.2f", freq);
+        perfThread.InputMessage(event);
+    }
+    
+    // Wait for performance to finish
+    perfThread.Join();
+    
+    return 0;
+}
+```
+
+### CsoundPerformanceThread methods
+
+```cpp
+class CsoundPerformanceThread {
+public:
+    CsoundPerformanceThread(CSOUND *csound);
+    CsoundPerformanceThread(Csound *csound);
+    ~CsoundPerformanceThread();
+    
+    void Play();            // Start performance
+    void Pause();           // Pause performance
+    void TogglePause();     // Toggle pause state
+    void Stop();            // Stop performance
+    void Join();            // Wait for thread to finish
+    void FlushMessageQueue(); // Clear pending messages
+    
+    void InputMessage(const char *s);  // Send score event
+    void SetScoreOffsetSeconds(MYFLT offset);
+    
+    int GetStatus();        // Get performance status
+    MYFLT GetScoreOffsetSeconds();
+    bool IsRunning();       // Check if running
+};
+```
+
+## Advanced example
+
+```cpp
+#include <csound/csound.hpp>
+#include <csound/csPerfThread.hpp>
+#include <iostream>
+#include <string>
+#include <thread>
+#include <chrono>
+
+class CsoundEngine {
+private:
+    Csound csound;
+    CsoundPerformanceThread *perfThread;
+    MYFLT *freqChannel;
+    MYFLT *ampChannel;
+    
+public:
+    CsoundEngine() : perfThread(nullptr), freqChannel(nullptr), ampChannel(nullptr) {}
+    
+    ~CsoundEngine() {
+        if (perfThread) {
+            perfThread->Stop();
+            perfThread->Join();
+            delete perfThread;
+        }
+    }
+    
+    bool initialize() {
+        // Set options
+        csound.SetOption("-odac");
+        csound.SetOption("-m0");
+        csound.SetOption("-d");
+        csound.SetOption("--sample-rate=44100");
+        csound.SetOption("--ksmps=64");
+        
+        // Compile orchestra
+        const char *orc = R"(
+            sr = 44100
+            ksmps = 64
+            nchnls = 2
+            0dbfs = 1
+            
+            instr 1
+                kfreq chnget "frequency"
+                kamp chnget "amplitude"
+                asig oscils kamp, kfreq, 0
+                asig *= linsegr(0, 0.01, 1, 0.1, 0)
+                outs asig, asig
+            endin
+        )";
+        
+        if (csound.CompileOrc(orc) != CSOUND_SUCCESS) {
+            std::cerr << "Failed to compile orchestra" << std::endl;
+            return false;
+        }
+        
+        if (csound.Start() != CSOUND_SUCCESS) {
+            std::cerr << "Failed to start Csound" << std::endl;
+            return false;
+        }
+        
+        // Get channel pointers for fast access
+        csound.GetChannelPtr(&freqChannel, "frequency",
+                           CSOUND_CONTROL_CHANNEL | CSOUND_INPUT_CHANNEL);
+        csound.GetChannelPtr(&ampChannel, "amplitude",
+                           CSOUND_CONTROL_CHANNEL | CSOUND_INPUT_CHANNEL);
+        
+        // Set initial values
+        *freqChannel = 440.0;
+        *ampChannel = 0.5;
+        
+        // Create and start performance thread
+        perfThread = new CsoundPerformanceThread(csound.GetCsound());
+        perfThread->Play();
+        
+        return true;
+    }
+    
+    void playNote(float freq, float amp, float dur) {
+        if (perfThread && perfThread->IsRunning()) {
+            char event[128];
+            snprintf(event, sizeof(event), "i 1 0 %.2f", dur);
+            perfThread->InputMessage(event);
+            
+            *freqChannel = freq;
+            *ampChannel = amp;
+        }
+    }
+    
+    void setFrequency(float freq) {
+        if (freqChannel) {
+            *freqChannel = freq;
+        }
+    }
+    
+    void setAmplitude(float amp) {
+        if (ampChannel) {
+            *ampChannel = amp;
+        }
+    }
+};
+
+int main() {
+    CsoundEngine engine;
+    
+    if (!engine.initialize()) {
+        return 1;
+    }
+    
+    std::cout << "Csound engine initialized" << std::endl;
+    
+    // Play some notes
+    float notes[] = {261.63, 293.66, 329.63, 349.23, 392.00, 440.00, 493.88, 523.25};
+    
+    for (float note : notes) {
+        std::cout << "Playing note: " << note << " Hz" << std::endl;
+        engine.playNote(note, 0.3, 0.5);
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
+    
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    std::cout << "Done" << std::endl;
+    
+    return 0;
+}
+```
+
+## Thread safety
+
+The `CsoundPerformanceThread` class handles thread safety internally. However:
+
+- Channel access via pointers is generally safe
+- Use `InputMessage()` instead of direct event calls from other threads
+- Don't call `Compile*()` methods while performance thread is running
+
+## Building C++ applications
+
+### Compiler flags
+
+```bash
+g++ -o myapp myapp.cpp -lcsound64 -lpthread -std=c++11
+```
+
+### CMake example
+
+```cmake
+cmake_minimum_required(VERSION 3.10)
+project(MyCsoundApp)
+
+set(CMAKE_CXX_STANDARD 11)
+
+find_library(CSOUND_LIBRARY csound64)
+find_path(CSOUND_INCLUDE_DIR csound/csound.h)
+
+add_executable(myapp myapp.cpp)
+
+target_include_directories(myapp PRIVATE ${CSOUND_INCLUDE_DIR})
+target_link_libraries(myapp ${CSOUND_LIBRARY} pthread)
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="C API reference" icon="code" href="/bindings/c-api">
+    Explore the underlying C API
+  </Card>
+  <Card title="Python bindings" icon="python" href="/bindings/python">
+    Use Csound from Python
+  </Card>
+  <Card title="Examples" icon="book-open" href="https://github.com/csound/csound/tree/develop/examples">
+    Browse C++ examples
+  </Card>
+  <Card title="API docs" icon="file-code" href="https://csound.com/docs/api/">
+    Complete API documentation
+  </Card>
+</CardGroup>

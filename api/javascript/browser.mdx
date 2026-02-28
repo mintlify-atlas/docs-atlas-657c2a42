@@ -1,0 +1,1022 @@
+---
+title: Browser/WASM API
+description: Complete API reference for Csound in web browsers using WebAssembly
+---
+
+The `@csound/browser` package provides Csound as a WebAssembly module for web browsers, with full Web Audio API integration.
+
+## Initialization
+
+### Csound()
+
+Initializes and returns a new Csound instance.
+
+```typescript
+function Csound(params?: {
+  audioContext?: AudioContext | OfflineAudioContext;
+  inputChannelCount?: number;
+  outputChannelCount?: number;
+  autoConnect?: boolean;
+  withPlugins?: object[];
+  useWorker?: boolean;
+  useSAB?: boolean;
+}): Promise<CsoundObj | undefined>
+```
+
+#### Parameters
+
+- `audioContext` - Optional AudioContext or OfflineAudioContext to use. If not provided, an AudioContext will be created automatically.
+- `inputChannelCount` - Input channel count for AudioNode. Defaults to 2.
+- `outputChannelCount` - Output channel count for AudioNode. Defaults to 2.
+- `autoConnect` - Automatically connect to audioContext.destination. Default: `true`.
+- `withPlugins` - Array of WebAssembly plugin libraries to load.
+- `useWorker` - Run Csound in a Web Worker separate from the audio callback. Default: `false`.
+- `useSAB` - Use SharedArrayBuffers for Web Worker communication if supported. Default: `true`.
+
+#### Returns
+
+`Promise<CsoundObj | undefined>` - A Csound instance or undefined if initialization fails.
+
+#### Example
+
+```javascript
+import { Csound } from '@csound/browser';
+
+// Basic initialization
+const csound = await Csound();
+
+// With custom AudioContext
+const audioContext = new AudioContext({ latencyHint: 'playback' });
+const csound = await Csound({ audioContext });
+
+// With Web Worker for better performance
+const csound = await Csound({ 
+  useWorker: true,
+  useSAB: true 
+});
+
+// With offline rendering
+const offlineContext = new OfflineAudioContext(2, 44100 * 10, 44100);
+const csound = await Csound({ audioContext: offlineContext });
+```
+
+## CsoundObj interface
+
+The main Csound object returned by `Csound()` initialization.
+
+### Web Audio integration
+
+#### getAudioContext()
+
+Returns the AudioContext or OfflineAudioContext used by Csound.
+
+```typescript
+getAudioContext(): Promise<AudioContext | OfflineAudioContext | undefined>
+```
+
+```javascript
+const audioContext = await csound.getAudioContext();
+console.log('Sample rate:', audioContext.sampleRate);
+```
+
+#### getNode()
+
+Returns the AudioNode used for Csound processing.
+
+```typescript
+getNode(): Promise<AudioNode | undefined>
+```
+
+```javascript
+const node = await csound.getNode();
+// Connect to custom audio graph
+node.connect(reverb).connect(audioContext.destination);
+```
+
+### Instance information
+
+#### getSr()
+
+Returns the sample rate.
+
+```typescript
+getSr(): Promise<number>
+```
+
+```javascript
+const sr = await csound.getSr();
+console.log('Sample rate:', sr); // 44100
+```
+
+#### getKr()
+
+Returns the control rate.
+
+```typescript
+getKr(): Promise<number>
+```
+
+```javascript
+const kr = await csound.getKr();
+console.log('Control rate:', kr); // 4410
+```
+
+#### getKsmps()
+
+Returns the ksmps value (samples per control period).
+
+```typescript
+getKsmps(): Promise<number>
+```
+
+```javascript
+const ksmps = await csound.getKsmps();
+console.log('ksmps:', ksmps); // 10
+```
+
+#### getNchnls()
+
+Returns the number of output channels.
+
+```typescript
+getNchnls(): Promise<number>
+```
+
+#### getNchnlsInput()
+
+Returns the number of input channels.
+
+```typescript
+getNchnlsInput(): Promise<number>
+```
+
+#### get0dBFS()
+
+Returns the 0dBFS reference value.
+
+```typescript
+get0dBFS(): Promise<number>
+```
+
+```javascript
+const maxAmp = await csound.get0dBFS();
+console.log('0dBFS:', maxAmp); // 1.0 or 32768.0
+```
+
+#### getA4()
+
+Returns the A4 frequency reference.
+
+```typescript
+getA4(): Promise<number>
+```
+
+```javascript
+const a4 = await csound.getA4();
+console.log('A4 frequency:', a4); // 440.0
+```
+
+#### getCurrentTimeSamples()
+
+Returns the current performance time in samples.
+
+```typescript
+getCurrentTimeSamples(): Promise<number>
+```
+
+#### getSizeOfMYFLT()
+
+Returns the size of MYFLT in bytes.
+
+```typescript
+getSizeOfMYFLT(): Promise<number>
+```
+
+### Configuration
+
+#### setOption()
+
+Sets a single Csound command-line option.
+
+```typescript
+setOption(option: string): Promise<number>
+```
+
+```javascript
+await csound.setOption('-odac');
+await csound.setOption('-m0'); // Disable message output
+```
+
+#### setParams()
+
+Configures Csound with a CSOUND_PARAMS structure.
+
+```typescript
+setParams(csoundParams: CSOUND_PARAMS): Promise<undefined>
+```
+
+```javascript
+const params = await csound.getParams();
+params.tempo = 120;
+params.message_level = 0;
+await csound.setParams(params);
+```
+
+#### getParams()
+
+Gets the current CSOUND_PARAMS structure.
+
+```typescript
+getParams(): Promise<CSOUND_PARAMS>
+```
+
+### Compilation
+
+#### compileCSD()
+
+Compiles a CSD file or text but does not perform it.
+
+```typescript
+compileCSD(path: string, mode?: number): Promise<number>
+```
+
+- `mode` - 0 for file path, 1 for CSD text. Default: 0
+
+```javascript
+// Compile from text
+const csd = `<CsoundSynthesizer>...</CsoundSynthesizer>`;
+await csound.compileCSD(csd, 1);
+
+// Compile from file
+await csound.fs.writeFile('test.csd', csdData);
+await csound.compileCSD('test.csd', 0);
+```
+
+#### compileOrc()
+
+Compiles orchestra code.
+
+```typescript
+compileOrc(orc: string): Promise<number>
+```
+
+```javascript
+const orc = `
+  instr 1
+    out poscil(0dbfs/3, 440)
+  endin
+`;
+await csound.compileOrc(orc);
+```
+
+#### parseOrc()
+
+Parses orchestra code and returns an AST.
+
+```typescript
+parseOrc(orc: string): Promise<object>
+```
+
+#### compileTree()
+
+Compiles an AST tree.
+
+```typescript
+compileTree(tree: any): Promise<number>
+```
+
+#### evalCode()
+
+Compiles and evaluates orchestra code.
+
+```typescript
+evalCode(orc: string): Promise<number>
+```
+
+### Performance control
+
+#### start()
+
+Prepares Csound for performance.
+
+```typescript
+start(): Promise<number>
+```
+
+```javascript
+await csound.compileCSD(csd, 1);
+await csound.start();
+```
+
+#### perform()
+
+Performs audio until the end is reached.
+
+```typescript
+perform(): Promise<number>
+```
+
+```javascript
+await csound.start();
+await csound.perform(); // Blocks until performance ends
+```
+
+#### performKsmps()
+
+Performs one ksmps worth of samples.
+
+```typescript
+performKsmps(): Promise<number>
+```
+
+```javascript
+await csound.start();
+while (await csound.performKsmps() === 0) {
+  // Update controls each k-period
+  await csound.setControlChannel('freq', Math.random() * 1000);
+}
+```
+
+#### performBuffer()
+
+Performs one buffer worth of audio.
+
+```typescript
+performBuffer(): Promise<number>
+```
+
+#### pause()
+
+Pauses performance.
+
+```typescript
+pause(): Promise<undefined>
+```
+
+```javascript
+await csound.pause();
+```
+
+#### resume()
+
+Resumes paused performance.
+
+```typescript
+resume(): Promise<undefined>
+```
+
+```javascript
+await csound.resume();
+```
+
+#### stop()
+
+Stops performance.
+
+```typescript
+stop(): Promise<undefined>
+```
+
+```javascript
+await csound.stop();
+```
+
+#### cleanup()
+
+Prints performance info and closes audio/MIDI devices.
+
+```typescript
+cleanup(): Promise<number>
+```
+
+```javascript
+await csound.cleanup();
+```
+
+#### reset()
+
+Resets Csound to initial state.
+
+```typescript
+reset(): Promise<number>
+```
+
+### Channels
+
+#### setControlChannel()
+
+Sets a control channel value.
+
+```typescript
+setControlChannel(channelName: string, value: number): Promise<undefined>
+```
+
+```javascript
+await csound.setControlChannel('volume', 0.8);
+await csound.setControlChannel('frequency', 440);
+```
+
+#### getControlChannel()
+
+Gets a control channel value.
+
+```typescript
+getControlChannel(channelName: string): Promise<undefined>
+```
+
+```javascript
+const volume = await csound.getControlChannel('volume');
+```
+
+#### setStringChannel()
+
+Sets a string channel value.
+
+```typescript
+setStringChannel(channelName: string, value: string): Promise<undefined>
+```
+
+```javascript
+await csound.setStringChannel('filename', 'sample.wav');
+```
+
+#### getStringChannel()
+
+Gets a string channel value.
+
+```typescript
+getStringChannel(channelName: string): Promise<undefined>
+```
+
+### Score events
+
+#### inputMessage()
+
+Inputs an immediate score event.
+
+```typescript
+inputMessage(scoreEvent: string): Promise<number>
+```
+
+```javascript
+await csound.inputMessage('i 1 0 2 440 0.5');
+```
+
+#### inputMessageAsync()
+
+Inputs an immediate score event asynchronously.
+
+```typescript
+inputMessageAsync(scoreEvent: string): Promise<number>
+```
+
+#### readScore()
+
+Reads and loads a score from a string.
+
+```typescript
+readScore(score: string): Promise<undefined>
+```
+
+```javascript
+const score = `
+  i 1 0 1 440
+  i 1 1 1 550
+  i 1 2 1 660
+`;
+await csound.readScore(score);
+```
+
+#### getScoreTime()
+
+Returns the current score time in seconds.
+
+```typescript
+getScoreTime(): Promise<number>
+```
+
+```javascript
+const time = await csound.getScoreTime();
+console.log('Score time:', time);
+```
+
+#### setScoreOffsetSeconds()
+
+Sets the score offset time.
+
+```typescript
+setScoreOffsetSeconds(time: number): Promise<number>
+```
+
+#### getScoreOffsetSeconds()
+
+Gets the score offset time.
+
+```typescript
+getScoreOffsetSeconds(): Promise<number>
+```
+
+#### rewindScore()
+
+Rewinds the score to the offset time.
+
+```typescript
+rewindScore(): Promise<number>
+```
+
+#### isScorePending()
+
+Checks if score events are pending.
+
+```typescript
+isScorePending(): Promise<number>
+```
+
+#### setScorePending()
+
+Sets whether score events are performed.
+
+```typescript
+setScorePending(pending: number): Promise<undefined>
+```
+
+### Tables
+
+#### tableLength()
+
+Returns the length of a table (excluding guard point).
+
+```typescript
+tableLength(tableNum: string): Promise<number>
+```
+
+```javascript
+const length = await csound.tableLength('1');
+console.log('Table 1 length:', length);
+```
+
+#### tableGet()
+
+Gets a value from a table.
+
+```typescript
+tableGet(tableNum: string, tableIndex: string): Promise<number>
+```
+
+```javascript
+const value = await csound.tableGet('1', '100');
+```
+
+#### tableSet()
+
+Sets a value in a table.
+
+```typescript
+tableSet(tableNum: string, tableIndex: string, value: string): Promise<undefined>
+```
+
+```javascript
+await csound.tableSet('1', '100', '0.707');
+```
+
+#### tableCopyIn()
+
+Copies an array into a table.
+
+```typescript
+tableCopyIn(tableNum: string, array: number[] | ArrayLike<number>): Promise<undefined>
+```
+
+```javascript
+const waveform = new Float32Array(512);
+for (let i = 0; i < 512; i++) {
+  waveform[i] = Math.sin(2 * Math.PI * i / 512);
+}
+await csound.tableCopyIn('1', waveform);
+```
+
+#### tableCopyOut()
+
+Copies a table to a Float64Array.
+
+```typescript
+tableCopyOut(tableNum: string): Promise<Float64Array | undefined>
+```
+
+```javascript
+const tableData = await csound.tableCopyOut('1');
+console.log('Table values:', tableData);
+```
+
+#### getTable()
+
+Alias for tableCopyOut().
+
+```typescript
+getTable(tableNum: string): Promise<Float64Array | undefined>
+```
+
+#### getTableArgs()
+
+Gets table arguments.
+
+```typescript
+getTableArgs(tableNum: string): Promise<Float64Array | undefined>
+```
+
+#### isNamedGEN()
+
+Checks if a GEN number is a named GEN.
+
+```typescript
+isNamedGEN(tableNum: string): Promise<number>
+```
+
+#### getNamedGEN()
+
+Gets the GEN name for a table.
+
+```typescript
+getNamedGEN(tableNum: string): Promise<string | undefined>
+```
+
+### MIDI
+
+#### midiMessage()
+
+Sends a MIDI message.
+
+```typescript
+midiMessage(status: number, data1: number, data2: number): Promise<undefined>
+```
+
+```javascript
+// Note on: channel 0, note 60, velocity 100
+await csound.midiMessage(144, 60, 100);
+
+// Note off: channel 0, note 60, velocity 0
+await csound.midiMessage(128, 60, 0);
+```
+
+#### getMIDIDevList()
+
+Gets a list of MIDI devices.
+
+```typescript
+getMIDIDevList(): Promise<any>
+```
+
+#### getMidiOutFileName()
+
+Gets the MIDI output filename.
+
+```typescript
+getMidiOutFileName(): Promise<string>
+```
+
+#### getRtMidiName()
+
+Gets the real-time MIDI name.
+
+```typescript
+getRtMidiName(): Promise<string>
+```
+
+#### setMidiCallbacks()
+
+Sets MIDI callbacks.
+
+```typescript
+setMidiCallbacks(callbacks: any): Promise<void>
+```
+
+### Audio I/O
+
+#### enableAudioInput()
+
+Enables audio input (microphone).
+
+```typescript
+enableAudioInput(): Promise<void>
+```
+
+```javascript
+await csound.enableAudioInput();
+// Now instruments can use 'inch' opcode
+```
+
+#### getInputBufferSize()
+
+Returns the input buffer size in samples.
+
+```typescript
+getInputBufferSize(): Promise<number>
+```
+
+#### getOutputBufferSize()
+
+Returns the output buffer size in samples.
+
+```typescript
+getOutputBufferSize(): Promise<number>
+```
+
+#### getInputBuffer()
+
+Returns the address of the input buffer.
+
+```typescript
+getInputBuffer(): Promise<number>
+```
+
+#### getOutputBuffer()
+
+Returns the address of the output buffer.
+
+```typescript
+getOutputBuffer(): Promise<number>
+```
+
+#### getSpin()
+
+Returns the address of the input working buffer.
+
+```typescript
+getSpin(): Promise<number>
+```
+
+#### getSpout()
+
+Returns the address of the output working buffer.
+
+```typescript
+getSpout(): Promise<number>
+```
+
+### System
+
+#### getInputName()
+
+Returns the audio input name.
+
+```typescript
+getInputName(): Promise<string>
+```
+
+#### getOutputName()
+
+Returns the audio output name.
+
+```typescript
+getOutputName(): Promise<string>
+```
+
+#### getAPIVersion()
+
+Returns the API version.
+
+```typescript
+getAPIVersion(): Promise<number>
+```
+
+```javascript
+const version = await csound.getAPIVersion();
+console.log('API version:', version);
+```
+
+#### getVersion()
+
+Returns the Csound version.
+
+```typescript
+getVersion(): Promise<number>
+```
+
+```javascript
+const version = await csound.getVersion();
+console.log('Csound version:', version);
+```
+
+#### getDebug()
+
+Checks if debug mode is enabled.
+
+```typescript
+getDebug(): Promise<number>
+```
+
+#### setDebug()
+
+Sets debug mode.
+
+```typescript
+setDebug(debug: number): Promise<undefined>
+```
+
+#### initialize()
+
+Initializes Csound with specific flags.
+
+```typescript
+initialize(): Promise<number>
+```
+
+#### destroy()
+
+Destroys the Csound instance and frees memory.
+
+```typescript
+destroy(): Promise<undefined>
+```
+
+```javascript
+await csound.stop();
+await csound.cleanup();
+await csound.destroy();
+```
+
+#### terminateInstance()
+
+Terminates the instance and all workers.
+
+```typescript
+terminateInstance(): Promise<void>
+```
+
+#### appendEnv()
+
+Appends an environment variable.
+
+```typescript
+appendEnv(name: string, value: string): Promise<void>
+```
+
+### Filesystem
+
+See the `fs` property for filesystem operations.
+
+#### fs
+
+The virtual filesystem interface.
+
+```typescript
+fs: CsoundFs
+```
+
+See the overview page for filesystem usage examples.
+
+### Properties
+
+#### name
+
+Instance name identifier.
+
+```typescript
+name: string
+```
+
+## Type definitions
+
+### CSOUND_PARAMS
+
+Csound parameter structure.
+
+```typescript
+type CSOUND_PARAMS = {
+  debug_mode: number;
+  buffer_frames: number;
+  hardware_buffer_frames: number;
+  displays: number;
+  ascii_graphs: number;
+  postscript_graphs: number;
+  message_level: number;
+  tempo: number;
+  ring_bell: number;
+  use_cscore: number;
+  terminate_on_midi: number;
+  heartbeat: number;
+  defer_gen01_load: number;
+  midi_key: number;
+  midi_key_cps: number;
+  midi_key_oct: number;
+  midi_key_pch: number;
+  midi_velocity: number;
+}
+```
+
+### CsoundFs
+
+Filesystem interface.
+
+```typescript
+interface CsoundFs {
+  appendFile: (path: string, file: Uint8Array) => Promise<void>;
+  writeFile: (path: string, file: Uint8Array) => Promise<void>;
+  readFile: (path: string) => Promise<Uint8Array>;
+  unlink: (path: string) => Promise<void>;
+  readdir: (path: string) => Promise<string[]>;
+  mkdir: (path: string) => Promise<void>;
+  stat: (path: string) => Promise<CsoundFsStat | undefined>;
+  pathExists: (path: string) => Promise<boolean>;
+}
+```
+
+### CsoundFsStat
+
+Filesystem stat structure.
+
+```typescript
+interface CsoundFsStat {
+  dev: number;
+  ino: number;
+  mode: number;
+  nlink: number;
+  uid: number;
+  gid: number;
+  rdev: number;
+  size: number;
+  blksize: number;
+  blocks: number;
+  atimeMs: number;
+  mtimeMs: number;
+  ctimeMs: number;
+  birthtimeMs: number;
+  atime: Date;
+  mtime: Date;
+  ctime: Date;
+  birthtime: Date;
+  isFile: boolean;
+  isDirectory: boolean;
+  isBlockDevice: boolean;
+  isCharacterDevice: boolean;
+  isSymbolicLink: boolean;
+  isFIFO: boolean;
+  isSocket: boolean;
+}
+```
+
+## Complete example
+
+```javascript
+import { Csound } from '@csound/browser';
+
+async function main() {
+  // Initialize Csound
+  const csound = await Csound({
+    useWorker: true,
+    autoConnect: true
+  });
+
+  // Listen for events
+  csound.on('realtimePerformanceStarted', () => {
+    console.log('Performance started');
+  });
+
+  csound.on('message', (msg) => {
+    console.log('Csound:', msg);
+  });
+
+  // Define CSD
+  const csd = `
+<CsoundSynthesizer>
+<CsOptions>
+  -odac
+</CsOptions>
+<CsInstruments>
+sr = 44100
+kr = 4410
+ksmps = 10
+nchnls = 2
+0dbfs = 1
+
+chn_k "frequency", 3
+chn_k "amplitude", 3
+
+instr 1
+  kFreq chnget "frequency"
+  kAmp chnget "amplitude"
+  aOut poscil kAmp, kFreq
+  outs aOut, aOut
+endin
+</CsInstruments>
+<CsScore>
+  i 1 0 3600
+</CsScore>
+</CsoundSynthesizer>
+  `;
+
+  // Compile and start
+  await csound.compileCSD(csd, 1);
+  await csound.start();
+  csound.perform();
+
+  // Control in real-time
+  setInterval(async () => {
+    const freq = 200 + Math.random() * 400;
+    await csound.setControlChannel('frequency', freq);
+    await csound.setControlChannel('amplitude', 0.3);
+  }, 1000);
+}
+
+main();
+```

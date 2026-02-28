@@ -1,0 +1,370 @@
+---
+title: Android platform support
+description: Building and using Csound on Android devices
+---
+
+Csound for Android provides a native library with JNI bindings and a Java interface for integrating Csound into Android applications.
+
+## Overview
+
+Csound for Android 7.0 consists of:
+
+- Csound core library
+- OpenSL ES audio backend
+- Java interface (csnd7 package)
+- JNI bindings
+- Plugin libraries
+- Example applications
+
+## Requirements
+
+- **Android Studio**: https://developer.android.com/studio/
+- **Android NDK**: http://developer.android.com/tools/sdk/ndk/
+
+## Directory structure
+
+```
+Android/
+├── CsoundAndroid/           # JNI and Java interface sources
+├── CsoundForAndroid/        # Android Studio projects
+│   ├── CsoundAndroid/       # Library module
+│   └── CsoundAndroidExamples/  # Example apps
+└── docs/                    # Documentation
+```
+
+## Building from source
+
+### Prerequisites
+
+Set environment variables:
+
+```bash
+export ANDROID_NDK_ROOT=/path/to/android-ndk
+export NDK_MODULE_PATH=/path/to/ndk-modules
+```
+
+### Download dependencies
+
+```bash
+cd Android
+sh downloadDependencies.sh
+```
+
+### Build the library
+
+```bash
+cd CsoundAndroid
+sh build.sh
+```
+
+This generates:
+- JNI libs in `./CsoundAndroid/libs`
+- Java sources in `./CsoundAndroid/src`
+
+### Update Android Studio project
+
+```bash
+sh update.sh
+```
+
+This updates the CsoundAndroid module in CsoundForAndroid, ready to use in Android Studio.
+
+## Using in Android Studio
+
+### Add as dependency
+
+1. Import the CsoundAndroid module into your project
+2. Add to your app's `build.gradle`:
+
+```gradle
+dependencies {
+    implementation project(':CsoundAndroid')
+}
+```
+
+### Initialize Csound
+
+```java
+import csnd7.Csound;
+import csnd7.CsoundMYFLTArray;
+
+public class AudioEngine {
+    private Csound csound;
+    
+    public void start() {
+        csound = new Csound();
+        
+        // Set options
+        csound.SetOption("-odac");
+        csound.SetOption("-m0");
+        
+        // Compile CSD from assets
+        String csdPath = getCsdPath("test.csd");
+        csound.Compile(csdPath);
+        
+        // Start performance in separate thread
+        new Thread(() -> {
+            csound.Start();
+            csound.Perform();
+        }).start();
+    }
+    
+    public void stop() {
+        if (csound != null) {
+            csound.Stop();
+            csound.Cleanup();
+            csound.Reset();
+        }
+    }
+}
+```
+
+### Load CSD from assets
+
+```java
+import android.content.Context;
+import java.io.*;
+
+private String getCsdPath(String filename) throws IOException {
+    Context context = getApplicationContext();
+    
+    // Copy from assets to internal storage
+    InputStream is = context.getAssets().open(filename);
+    File csdFile = new File(context.getFilesDir(), filename);
+    
+    OutputStream os = new FileOutputStream(csdFile);
+    byte[] buffer = new byte[1024];
+    int length;
+    while ((length = is.read(buffer)) > 0) {
+        os.write(buffer, 0, length);
+    }
+    os.close();
+    is.close();
+    
+    return csdFile.getAbsolutePath();
+}
+```
+
+### Control channels
+
+Communicate with running Csound code:
+
+```java
+// Set control channel
+csound.SetControlChannel("volume", 0.8);
+
+// Get control channel
+double freq = csound.GetControlChannel("frequency");
+
+// String channels
+csound.SetStringChannel("filename", "sample.wav");
+String path = csound.GetStringChannel("filepath");
+```
+
+### Score events
+
+Send real-time score events:
+
+```java
+// Send note event: instrument 1, start time 0, duration 2, frequency 440
+csound.InputMessage("i 1 0 2 440");
+
+// Send control event
+csound.InputMessage("e 0 10");  // End score at 10 seconds
+```
+
+## OpenSL ES audio backend
+
+Csound for Android uses OpenSL ES for low-latency audio:
+
+```csd
+<CsOptions>
+-o dac      ; Output to audio device
+-i adc      ; Input from microphone
+-b 256      ; Buffer size
+-B 1024     ; Output buffer size
+-+rtaudio=opensles  ; Use OpenSL ES (default on Android)
+</CsOptions>
+```
+
+## Permissions
+
+Add to `AndroidManifest.xml`:
+
+```xml
+<!-- Required for audio recording -->
+<uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+<!-- Required for file access -->
+<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+
+<!-- Declare audio features -->
+<uses-feature android:name="android.hardware.audio.low_latency" />
+<uses-feature android:name="android.hardware.audio.pro" />
+```
+
+Request runtime permissions (Android 6.0+):
+
+```java
+import android.Manifest;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+
+if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+        != PackageManager.PERMISSION_GRANTED) {
+    ActivityCompat.requestPermissions(this,
+        new String[]{Manifest.permission.RECORD_AUDIO},
+        REQUEST_RECORD_AUDIO);
+}
+```
+
+## MIDI support
+
+Android MIDI API integration:
+
+```java
+import android.media.midi.*;
+
+MidiManager midiManager = (MidiManager) getSystemService(Context.MIDI_SERVICE);
+MidiDeviceInfo[] devices = midiManager.getDevices();
+
+// Open device and send MIDI to Csound
+midiManager.openDevice(devices[0], device -> {
+    MidiOutputPort outputPort = device.openOutputPort(0);
+    
+    // Send note on (status=144, note=60, velocity=100)
+    byte[] noteOn = new byte[]{(byte)144, 60, 100};
+    outputPort.send(noteOn, 0, noteOn.length);
+}, null);
+```
+
+## Performance optimization
+
+### Use native sample rate
+
+Match device's native sample rate:
+
+```java
+import android.media.AudioManager;
+
+AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+String rate = audioManager.getProperty(AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE);
+csound.SetOption("--sample-rate=" + rate);
+```
+
+### Optimal buffer size
+
+```java
+String bufferSize = audioManager.getProperty(AudioManager.PROPERTY_OUTPUT_FRAMES_PER_BUFFER);
+csound.SetOption("-b" + bufferSize);
+```
+
+### Background processing
+
+Keep audio running in background:
+
+```java
+import android.os.PowerManager;
+
+PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
+PowerManager.WakeLock wakeLock = powerManager.newWakeLock(
+    PowerManager.PARTIAL_WAKE_LOCK,
+    "Csound::AudioEngine"
+);
+wakeLock.acquire();
+
+// Release when done
+wakeLock.release();
+```
+
+## Example application
+
+See `CsoundForAndroid/CsoundAndroidExamples` for complete examples including:
+
+- Basic synthesis
+- Audio file playback
+- Real-time control
+- MIDI input
+- UI integration
+
+## Kotlin usage
+
+Using Csound in Kotlin:
+
+```kotlin
+import csnd7.Csound
+import csnd7.CsoundMYFLTArray
+import kotlinx.coroutines.*
+
+class AudioEngine {
+    private var csound: Csound? = null
+    private var performanceJob: Job? = null
+    
+    fun start() {
+        csound = Csound().apply {
+            SetOption("-odac")
+            SetOption("-m0")
+            
+            val csdPath = getCsdPath("test.csd")
+            Compile(csdPath)
+        }
+        
+        performanceJob = CoroutineScope(Dispatchers.Default).launch {
+            csound?.Start()
+            csound?.Perform()
+        }
+    }
+    
+    fun stop() {
+        performanceJob?.cancel()
+        csound?.apply {
+            Stop()
+            Cleanup()
+            Reset()
+        }
+    }
+    
+    fun setVolume(value: Float) {
+        csound?.SetControlChannel("volume", value.toDouble())
+    }
+}
+```
+
+## Create release package
+
+Generate a release package:
+
+```bash
+sh release.sh
+```
+
+This creates a release archive containing the CsoundForAndroid Android Studio project.
+
+## Troubleshooting
+
+### NDK version mismatch
+
+Ensure `ANDROID_NDK_ROOT` points to a compatible NDK version (r21 or later recommended).
+
+### Audio glitches
+
+Try adjusting buffer sizes:
+
+```java
+csound.SetOption("-b256");
+csound.SetOption("-B1024");
+```
+
+### Library not loaded
+
+Ensure native libraries are included in APK. Check `build.gradle`:
+
+```gradle
+android {
+    packagingOptions {
+        pickFirst 'lib/armeabi-v7a/libcsound.so'
+        pickFirst 'lib/arm64-v8a/libcsound.so'
+    }
+}
+```

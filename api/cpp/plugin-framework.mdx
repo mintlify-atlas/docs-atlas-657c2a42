@@ -1,0 +1,588 @@
+---
+title: Plugin framework
+description: C++ plugin framework using the csnd namespace
+---
+
+The `csnd` namespace provides a modern C++ framework for writing Csound plugins with template-based classes, container types, and utility functions.
+
+**Location:** `include/plugin.h`
+
+## Plugin base classes
+
+### Plugin template
+
+```cpp
+template <std::size_t N, std::size_t M>
+struct Plugin : OPDS {
+  Param<N> outargs;  // N output arguments
+  Param<M> inargs;   // M input arguments
+  Csound *csound;    // Csound engine
+  uint32_t offset;   // Sample-accurate offset
+  uint32_t nsmps;    // Samples to process
+  
+  int32_t init();    // Initialization function
+  int32_t kperf();   // k-rate performance
+  int32_t aperf();   // a-rate performance
+  int32_t deinit();  // Cleanup function
+};
+```
+
+**Location:** `include/plugin.h:987`
+
+The `Plugin` template is the main base class for opcodes with both inputs and outputs.
+
+**Template parameters:**
+- `N` - Number of output arguments
+- `M` - Number of input arguments
+
+**Example:**
+```cpp
+struct MyOsc : csnd::Plugin<1, 2> {
+  // 1 output (audio), 2 inputs (frequency, amplitude)
+  
+  int32_t init() {
+    phase = 0.0;
+    return OK;
+  }
+  
+  int32_t aperf() {
+    MYFLT *out = outargs[0];
+    MYFLT freq = *inargs[0];
+    MYFLT amp = *inargs[1];
+    
+    for (uint32_t n = offset; n < nsmps; n++) {
+      out[n] = amp * sin(phase);
+      phase += freq * 2.0 * PI / sr();
+    }
+    return OK;
+  }
+  
+private:
+  double phase;
+};
+```
+
+### InPlug template
+
+```cpp
+template <std::size_t N>
+struct InPlug : OPDS {
+  Param<N> args;     // N arguments
+  Csound *csound;
+  uint32_t offset;
+  uint32_t nsmps;
+  
+  int32_t init();
+  int32_t kperf();
+  int32_t aperf();
+  int32_t deinit();
+};
+```
+
+**Location:** `include/plugin.h:860`
+
+Base class for opcodes with only input arguments (no outputs), or for opcodes with variable argument counts.
+
+### FPlugin template
+
+```cpp
+template <std::size_t N, std::size_t M>
+struct FPlugin : Plugin<N, M> {
+  uint32_t framecount;  // Current frame time index
+};
+```
+
+**Location:** `include/plugin.h:1124`
+
+Specialized base class for frequency-domain signal (fsig) processing plugins.
+
+## Parameter access
+
+### Param template
+
+```cpp
+template <std::size_t N>
+class Param {
+  MYFLT &operator[](int32_t n);              // Access parameter value
+  MYFLT *operator()(int32_t n);              // Get parameter pointer
+  STRINGDAT &str_data(int32_t n);            // Get string parameter
+  Fsig &fsig_data(int32_t n);                // Get fsig parameter
+  Vector<T> &vector_data<T>(int32_t n);      // Get array parameter
+};
+```
+
+**Location:** `include/plugin.h:783`
+
+**Access methods:**
+- `outargs[n]` / `inargs[n]` - Dereference to get/set scalar value
+- `outargs(n)` / `inargs(n)` - Get pointer for direct buffer access
+- `inargs.str_data(n)` - Access string argument
+- `inargs.fsig_data(n)` - Access fsig argument
+- `inargs.vector_data<MYFLT>(n)` - Access array argument
+
+## Container classes
+
+### Vector template
+
+```cpp
+template <typename T>
+class Vector : ARRAYDAT {
+  void init(Csound *csound, int32_t size, INSDS *ctx);
+  T &operator[](int32_t n);  // Array access
+  iterator begin();           // STL-style iteration
+  iterator end();
+  uint32_t len();            // Array length
+  T *data_array();           // Raw pointer
+};
+```
+
+**Location:** `include/plugin.h:347`
+
+Container for one-dimensional arrays with STL-compatible iterators.
+
+**Example:**
+```cpp
+struct ArraySum : csnd::Plugin<1, 1> {
+  int32_t kperf() {
+    auto &arr = inargs.vector_data<MYFLT>(0);
+    MYFLT sum = 0.0;
+    for (MYFLT val : arr) {
+      sum += val;
+    }
+    outargs[0] = sum;
+    return OK;
+  }
+};
+```
+
+### AudioSig class
+
+```cpp
+class AudioSig {
+  AudioSig(OPDS *p, MYFLT *s, bool res = false);
+  
+  iterator begin();    // Begin iterator (with offset)
+  iterator end();      // End iterator (excluding early)
+  MYFLT &operator[](int32_t n);
+  uint32_t GetOffset();
+  uint32_t GetNsmps();
+};
+```
+
+**Location:** `include/plugin.h:272`
+
+Wraps audio signals with automatic sample-accurate timing support.
+
+**Parameters:**
+- `p` - Plugin object pointer
+- `s` - Audio signal pointer
+- `res` - If true, resets output buffer to zero
+
+**Example:**
+```cpp
+struct Gain : csnd::Plugin<1, 2> {
+  int32_t aperf() {
+    csnd::AudioSig out(this, outargs(0), true);  // Reset output
+    csnd::AudioSig in(this, inargs(0));
+    MYFLT gain = *inargs[1];
+    
+    auto outiter = out.begin();
+    for (MYFLT sample : in) {
+      *outiter++ = sample * gain;
+    }
+    return OK;
+  }
+};
+```
+
+### Fsig class
+
+```cpp
+class Fsig : protected PVSDAT {
+  void init(Csound *csound, int32_t n, int32_t h, int32_t w, 
+            int32_t t, int32_t f, int32_t nb = 0, int32_t sl = 0,
+            uint32_t nsmps = 1);
+  uint32_t dft_size();
+  uint32_t hop_size();
+  uint32_t nbins();
+  uint32_t count();
+  bool isSliding();
+  float *data();
+};
+```
+
+**Location:** `include/plugin.h:498`
+
+Container for frequency-domain signals (phase vocoder data).
+
+### Pvframe template
+
+```cpp
+template <typename T>
+class Pvframe : public Fsig {
+  T &operator[](int32_t n);  // Access bin n
+  iterator begin();           // First bin
+  iterator end();             // One past last bin
+  T *data();                 // Raw pointer
+  uint32_t len();            // Number of bins
+};
+```
+
+**Location:** `include/plugin.h:585`
+
+Phase vocoder frame container with bin access.
+
+**Types:**
+- `pv_frame` - Standard PV frame (`Pvframe<pv_bin>`)
+- `spv_frame` - Sliding PV frame (`Pvframe<spv_bin>`)
+
+### Pvbin template
+
+```cpp
+template <typename T>
+class Pvbin {
+  T amp();           // Get amplitude
+  T freq();          // Get frequency
+  T amp(T a);        // Set amplitude
+  T freq(T f);       // Set frequency
+  Pvbin operator*(const Pvbin &a);  // Multiply bins
+};
+```
+
+**Location:** `include/plugin.h:419`
+
+Represents a single phase vocoder bin (amplitude-frequency pair).
+
+**Example:**
+```cpp
+struct PvScale : csnd::FPlugin<1, 2> {
+  int32_t kperf() {
+    csnd::pv_frame &fin = inargs.fsig_data(0);
+    csnd::pv_frame &fout = outargs.fsig_data(0);
+    MYFLT scale = *inargs[1];
+    
+    if (fout.count() != fin.count()) {
+      fout.init(csound, fin);
+      fout.count(fin.count());
+      
+      for (uint32_t i = 0; i < fin.nbins(); i++) {
+        fout[i].amp(fin[i].amp() * scale);
+        fout[i].freq(fin[i].freq());
+      }
+    }
+    return OK;
+  }
+};
+```
+
+### Table class
+
+```cpp
+class Table : FUNC {
+  int32_t init(Csound *csound, MYFLT *arg);
+  MYFLT &operator[](int32_t n);
+  iterator begin();
+  iterator end();
+  MYFLT *data();
+  uint32_t len();
+};
+```
+
+**Location:** `include/plugin.h:645`
+
+Function table container with array-like access.
+
+**Example:**
+```cpp
+struct TableRead : csnd::Plugin<1, 2> {
+  csnd::Table table;
+  
+  int32_t init() {
+    return table.init(csound, inargs(0));
+  }
+  
+  int32_t kperf() {
+    MYFLT ndx = *inargs[1];
+    int32_t idx = (int32_t)ndx % table.len();
+    outargs[0] = table[idx];
+    return OK;
+  }
+};
+```
+
+### AuxMem template
+
+```cpp
+template <typename T>
+class AuxMem : AUXCH {
+  void allocate(Csound *csound, int32_t n);
+  T &operator[](int32_t n);
+  iterator begin();
+  iterator end();
+  T *data();
+  uint32_t len();
+};
+```
+
+**Location:** `include/plugin.h:717`
+
+Dynamic memory allocation using Csound's AuxAlloc mechanism.
+
+**Example:**
+```cpp
+struct Delay : csnd::Plugin<1, 2> {
+  csnd::AuxMem<MYFLT> buffer;
+  uint32_t pos;
+  
+  int32_t init() {
+    MYFLT deltime = *inargs[1];
+    int32_t buflen = (int32_t)(deltime * sr());
+    buffer.allocate(csound, buflen);
+    pos = 0;
+    return OK;
+  }
+  
+  int32_t aperf() {
+    csnd::AudioSig in(this, inargs(0));
+    csnd::AudioSig out(this, outargs(0), true);
+    
+    for (uint32_t n = 0; n < in.GetNsmps(); n++) {
+      out[n + offset] = buffer[pos];
+      buffer[pos] = in[n + offset];
+      pos = (pos + 1) % buffer.len();
+    }
+    return OK;
+  }
+};
+```
+
+## Csound engine access
+
+The `csnd::Csound` class provides engine access methods:
+
+```cpp
+class Csound : CSOUND {
+  void *host_data();
+  int32_t init_error(const std::string &s);
+  int32_t perf_error(const std::string &s, OPDS *inst);
+  void warning(const std::string &s);
+  void message(const std::string &s);
+  
+  MYFLT _0dbfs();
+  MYFLT _A4();
+  uint32_t nchnls();
+  uint32_t nchnls_i();
+  int64_t current_time_samples();
+  
+  bool is_asig(void *arg);
+  
+  // MIDI methods
+  int32_t midi_channel(OPDS *p);
+  int32_t midi_note_num(OPDS *p);
+  int32_t midi_note_vel(OPDS *p);
+  MYFLT midi_chn_aftertouch(OPDS *p);
+  
+  // Memory allocation
+  void *malloc(size_t size);
+  void *calloc(size_t size);
+  void free(void *p);
+  
+  // FFT setup
+  fftp fft_setup(uint32_t size, uint32_t direction);
+  std::complex<MYFLT> *rfft(fftp setup, MYFLT *data);
+  std::complex<MYFLT> *fft(fftp setup, std::complex<MYFLT> *data);
+};
+```
+
+**Location:** `include/plugin.h:59`
+
+Access via `csound` member in plugin classes.
+
+## Plugin registration
+
+### plugin function
+
+```cpp
+template <typename T>
+int32_t plugin(Csound *csound, const char *name, 
+               const char *oargs, const char *iargs,
+               uint32_t thr, uint32_t flags = 0, 
+               int32_t deprec = 0);
+```
+
+**Location:** `include/plugin.h:1170`
+
+Registers a plugin opcode.
+
+**Parameters:**
+- `csound` - Csound engine pointer
+- `name` - Opcode name
+- `oargs` - Output argument types
+- `iargs` - Input argument types
+- `thr` - Thread specification (see below)
+- `flags` - Optional flags
+- `deprec` - Deprecation flag
+
+### Thread specification
+
+```cpp
+enum thread { 
+  i = 1,   // i-time only
+  k = 2,   // k-rate only
+  ik = 3,  // i-time and k-rate
+  a = 4,   // a-rate only
+  ia = 5   // i-time and a-rate
+};
+```
+
+**Location:** `include/plugin.h:48`
+
+### Argument type strings
+
+Common type specifiers:
+- `i` - i-rate scalar
+- `k` - k-rate scalar
+- `a` - a-rate audio
+- `S` - string
+- `f` - fsig (frequency-domain signal)
+- `[]` - array (e.g., `i[]`, `k[]`)
+- `m` - multiple (variable number)
+- `o` - optional
+- `.` - any type
+
+### Registration example
+
+```cpp
+#include <plugin.h>
+
+struct MyOsc : csnd::Plugin<1, 2> {
+  double phase;
+  
+  int32_t init() {
+    phase = 0.0;
+    return OK;
+  }
+  
+  int32_t aperf() {
+    MYFLT *out = outargs(0);
+    MYFLT freq = *inargs[0];
+    MYFLT amp = *inargs[1];
+    
+    for (uint32_t n = offset; n < nsmps; n++) {
+      out[n] = amp * sin(phase);
+      phase += freq * 2.0 * PI / sr();
+    }
+    return OK;
+  }
+};
+
+struct MyFilter : csnd::Plugin<1, 2> {
+  MYFLT y1;
+  
+  int32_t init() {
+    y1 = 0.0;
+    return OK;
+  }
+  
+  int32_t aperf() {
+    csnd::AudioSig in(this, inargs(0));
+    csnd::AudioSig out(this, outargs(0), true);
+    MYFLT cutoff = *inargs[1];
+    MYFLT a = exp(-cutoff * 2.0 * PI / sr());
+    
+    for (MYFLT sample : in) {
+      y1 = a * y1 + (1.0 - a) * sample;
+      *out.begin()++ = y1;
+    }
+    return OK;
+  }
+};
+
+extern "C" {
+  PUBLIC int32_t csoundModuleInit(CSOUND *csound) {
+    csnd::Csound *cs = (csnd::Csound *)csound;
+    
+    csnd::plugin<MyOsc>(cs, "myosc", "a", "kk", csnd::thread::ia);
+    csnd::plugin<MyFilter>(cs, "myfilt", "a", "ak", csnd::thread::ia);
+    
+    return 0;
+  }
+}
+```
+
+## Plugin helper methods
+
+Plugin base classes provide these helper methods:
+
+```cpp
+// Timing
+MYFLT sr();         // Sampling rate
+MYFLT kr();         // Control rate  
+MYFLT ksmps();      // Samples per k-period
+
+// Argument counts (for variable arguments)
+uint32_t out_count();
+uint32_t in_count();
+
+// MIDI
+int32_t midi_channel();
+int32_t midi_note_num();
+int32_t midi_note_vel();
+MYFLT midi_chn_aftertouch();
+MYFLT midi_chn_ctl(uint32_t ctl);
+
+// Runtime checks
+bool is_init();
+bool is_perf();
+```
+
+## Thread class
+
+```cpp
+class Thread {
+protected:
+  Csound *csound;
+  virtual uintptr_t run() = 0;
+  
+public:
+  Thread(Csound *cs);
+  uintptr_t join();
+  void *get_thread();
+};
+```
+
+**Location:** `include/plugin.h:249`
+
+Base class for creating threads within Csound.
+
+**Example:**
+```cpp
+class MyThread : public csnd::Thread {
+  uintptr_t run() override {
+    // Thread code here
+    csound->message("Thread running");
+    return 0;
+  }
+  
+public:
+  MyThread(csnd::Csound *cs) : Thread(cs) {}
+};
+
+// Usage
+MyThread *t = new MyThread(csound);
+uintptr_t result = t->join();
+```
+
+## Constants
+
+```cpp
+const double twopi = TWOPI;  // 2π
+```
+
+**Location:** `include/plugin.h:44`
+
+## See also
+
+- [Csound class](/api/cpp/csound-class)
+- [Plugin development guide](/guides/plugin-development)
+- [Opcode list](/opcodes)

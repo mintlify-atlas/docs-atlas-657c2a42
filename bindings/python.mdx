@@ -1,0 +1,678 @@
+---
+title: Python bindings
+description: Use Csound from Python with ctcsound
+---
+
+The `ctcsound` module provides Python bindings to Csound using the `ctypes` library. It offers a Pythonic interface while maintaining full access to the C API.
+
+## Installation
+
+Install Csound and the Python bindings:
+
+```bash
+pip install ctcsound
+```
+
+Or if you have Csound installed from source, the module is typically included.
+
+## Importing
+
+```python
+import ctcsound
+from ctcsound import Csound
+```
+
+## Basic usage
+
+### Creating an instance
+
+```python
+from ctcsound import Csound
+
+# Create Csound instance
+cs = Csound()
+
+# Get version
+version = cs.version()
+print(f"Csound version: {version}")
+
+# Cleanup (or use context manager)
+del cs
+```
+
+### Using context manager
+
+```python
+from ctcsound import Csound
+
+with Csound() as cs:
+    print(f"Csound version: {cs.version()}")
+    # Automatic cleanup when exiting context
+```
+
+## Compilation and performance
+
+### Compiling a CSD file
+
+```python
+from ctcsound import Csound
+
+cs = Csound()
+
+# Set options
+cs.setOption("-odac")  # Audio to DAC
+cs.setOption("-m0")    # Message level
+
+# Compile CSD file
+result = cs.compileCSD('myfile.csd')
+if result == 0:
+    # Start performance
+    cs.start()
+    
+    # Performance loop
+    while cs.performKsmps() == 0:
+        pass  # Process one k-period
+    
+    print("Performance complete")
+else:
+    print(f"Compilation failed with code: {result}")
+```
+
+### Compiling orchestra code
+
+```python
+cs = Csound()
+
+orc = '''
+sr = 44100
+ksmps = 64
+nchnls = 2
+0dbfs = 1
+
+instr 1
+    kfreq = p4
+    asig oscils 0.5, kfreq, 0
+    outs asig, asig
+endin
+'''
+
+# Compile orchestra
+cs.compileOrc(orc)
+cs.start()
+
+# Send score event
+cs.eventString('i 1 0 2 440')
+
+# Perform
+while cs.performKsmps() == 0:
+    pass
+```
+
+### Evaluating expressions
+
+```python
+cs = Csound()
+
+orc = '''
+sr = 44100
+ksmps = 64
+nchnls = 2
+'''
+
+cs.compileOrc(orc)
+cs.start()
+
+# Evaluate expressions
+result = cs.evalCode('440 * 2')
+print(f"Result: {result}")  # 880.0
+
+freq = cs.evalCode('cpspch(8.09)')
+print(f"Frequency: {freq}")
+```
+
+## Channels
+
+### Control channels
+
+```python
+cs = Csound()
+
+orc = '''
+sr = 44100
+ksmps = 64
+nchnls = 2
+0dbfs = 1
+
+instr 1
+    kfreq chnget "frequency"
+    kvol chnget "volume"
+    asig oscils kvol, kfreq, 0
+    outs asig, asig
+    
+    ; Send output back
+    kout = kfreq * 2
+    chnset kout, "output"
+endin
+'''
+
+cs.compileOrc(orc)
+cs.start()
+cs.eventString('i 1 0 5')
+
+# Set input channels
+cs.setControlChannel('frequency', 440.0)
+cs.setControlChannel('volume', 0.8)
+
+# Performance loop
+import time
+for i in range(50):
+    if cs.performKsmps() != 0:
+        break
+    
+    # Read output channel
+    output = cs.controlChannel('output')[0]
+    print(f"Output: {output}")
+    
+    # Modify frequency
+    freq = 440.0 + i * 5
+    cs.setControlChannel('frequency', freq)
+```
+
+### String channels
+
+```python
+cs = Csound()
+
+orc = '''
+instr 1
+    Smsg chnget "message"
+    puts Smsg, 1
+endin
+'''
+
+cs.compileOrc(orc)
+cs.start()
+cs.eventString('i 1 0 1')
+
+# Set string channel
+cs.setStringChannel('message', 'Hello from Python!')
+
+while cs.performKsmps() == 0:
+    pass
+```
+
+### Audio channels
+
+```python
+import numpy as np
+
+cs = Csound()
+
+orc = '''
+sr = 44100
+ksmps = 64
+nchnls = 2
+0dbfs = 1
+
+instr 1
+    ain chnget "audioIn"
+    ; Process audio
+    aout = ain * 2
+    chnset aout, "audioOut"
+endin
+'''
+
+cs.compileOrc(orc)
+cs.start()
+cs.eventString('i 1 0 10')
+
+ksmps = cs.ksmps()
+
+# Create audio buffer
+audio_in = np.zeros(ksmps, dtype=np.float64)
+audio_out = np.zeros(ksmps, dtype=np.float64)
+
+while cs.performKsmps() == 0:
+    # Generate input (sine wave)
+    audio_in[:] = np.sin(np.linspace(0, 2*np.pi, ksmps))
+    
+    # Send to Csound
+    cs.setAudioChannel('audioIn', audio_in)
+    
+    # Get processed audio
+    cs.getAudioChannel('audioOut', audio_out)
+    # Use audio_out...
+```
+
+## Audio I/O
+
+### Working with audio buffers
+
+```python
+import numpy as np
+from ctcsound import Csound
+
+cs = Csound()
+
+# Setup
+orc = '''
+sr = 44100
+ksmps = 64
+nchnls = 2
+0dbfs = 1
+
+instr 1
+    asig oscils 0.3, 440, 0
+    outs asig, asig
+endin
+'''
+
+cs.compileOrc(orc)
+cs.start()
+cs.eventString('i 1 0 2')
+
+# Get buffer info
+ksmps = cs.ksmps()
+nchnls = cs.nchnls()
+
+# Get output buffer pointer
+spout = cs.spout()
+
+# Create numpy array view (zero-copy)
+import ctypes
+import numpy as np
+
+output_buffer = np.ctypeslib.as_array(
+    spout, shape=(ksmps * nchnls,)
+)
+
+while cs.performKsmps() == 0:
+    # Access audio data directly
+    # output_buffer contains interleaved audio (L, R, L, R, ...)
+    for i in range(0, len(output_buffer), nchnls):
+        left = output_buffer[i]
+        right = output_buffer[i + 1]
+        # Process audio...
+```
+
+### Input buffer
+
+```python
+import numpy as np
+
+cs = Csound()
+
+orc = '''
+sr = 44100
+ksmps = 64
+nchnls = 2
+nchnls_i = 2
+0dbfs = 1
+
+instr 1
+    ain1, ain2 ins
+    ; Process input
+    aout1 = ain1 * 2
+    aout2 = ain2 * 2
+    outs aout1, aout2
+endin
+'''
+
+cs.compileOrc(orc)
+cs.start()
+cs.eventString('i 1 0 2')
+
+ksmps = cs.ksmps()
+nchnls_i = cs.nchnlsInput()
+
+# Get input buffer
+spin = cs.spin()
+input_buffer = np.ctypeslib.as_array(
+    spin, shape=(ksmps * nchnls_i,)
+)
+
+while cs.performKsmps() == 0:
+    # Write to input buffer
+    input_buffer[:] = np.random.uniform(-0.1, 0.1, ksmps * nchnls_i)
+```
+
+## Score events
+
+### String events
+
+```python
+cs = Csound()
+
+# Setup and compilation...
+cs.start()
+
+# Send various events
+cs.eventString('i 1 0 2 440')      # Note at 440 Hz
+cs.eventString('i 1 + 2 550')      # '+' means after previous
+cs.eventString('i 1 0.5 1 660')    # Note at time 0.5
+cs.eventString('i 2 0 4')          # Different instrument
+
+while cs.performKsmps() == 0:
+    pass
+```
+
+### Array events
+
+```python
+import ctypes
+
+cs = Csound()
+
+# Setup...
+cs.start()
+
+# Create p-field array
+pfields = (ctypes.c_double * 4)()
+pfields[0] = 1      # p1: instrument
+pfields[1] = 0      # p2: start time
+pfields[2] = 2      # p3: duration
+pfields[3] = 440    # p4: frequency
+
+cs.event(ctcsound.CS_INSTR_EVENT, pfields, 4)
+
+while cs.performKsmps() == 0:
+    pass
+```
+
+## Tables
+
+### Reading tables
+
+```python
+import numpy as np
+
+cs = Csound()
+
+orc = '''
+giSine ftgen 1, 0, 1024, 10, 1
+'''
+
+cs.compileOrc(orc)
+cs.start()
+
+# Get table length
+length = cs.tableLength(1)
+print(f"Table length: {length}")
+
+# Get table data
+table_ptr = cs.table(1)
+if table_ptr is not None:
+    # Create numpy array view
+    table_data = np.ctypeslib.as_array(table_ptr, shape=(length,))
+    
+    # Print first 10 values
+    print("First 10 values:")
+    print(table_data[:10])
+    
+    # Plot table (if matplotlib available)
+    try:
+        import matplotlib.pyplot as plt
+        plt.plot(table_data)
+        plt.title('Table 1')
+        plt.show()
+    except ImportError:
+        pass
+```
+
+### Writing tables
+
+```python
+import numpy as np
+
+cs = Csound()
+
+orc = 'giTable ftgen 1, 0, 1024, 7, 0, 1024, 0'
+cs.compileOrc(orc)
+cs.start()
+
+# Get table pointer
+table_ptr = cs.table(1)
+length = cs.tableLength(1)
+
+if table_ptr:
+    table_data = np.ctypeslib.as_array(table_ptr, shape=(length,))
+    
+    # Write new data (sine wave)
+    x = np.linspace(0, 2 * np.pi, length)
+    table_data[:] = np.sin(x)
+    
+    print("Table updated with sine wave")
+```
+
+## Complete example
+
+```python
+#!/usr/bin/env python3
+'''
+Interactive Csound synthesizer example
+'''
+
+import time
+from ctcsound import Csound
+
+class SimpleSynth:
+    def __init__(self):
+        self.cs = Csound()
+        
+    def setup(self):
+        # Set options
+        self.cs.setOption('-odac')     # Audio to DAC
+        self.cs.setOption('-m0')        # No messages
+        self.cs.setOption('-d')         # No displays
+        
+        # Define orchestra
+        orc = '''
+        sr = 44100
+        ksmps = 64
+        nchnls = 2
+        0dbfs = 1
+        
+        instr 1
+            kfreq chnget "frequency"
+            kamp chnget "amplitude"
+            kfiltfreq chnget "filterFreq"
+            
+            ; Oscillator
+            asig vco2 kamp * 0.5, kfreq
+            
+            ; Filter
+            asig moogladder asig, kfiltfreq, 0.7
+            
+            ; Envelope
+            asig *= linsegr:a(0, 0.01, 1, 0.1, 0)
+            
+            outs asig, asig
+        endin
+        '''
+        
+        # Compile and start
+        if self.cs.compileOrc(orc) != 0:
+            raise RuntimeError("Failed to compile orchestra")
+        
+        if self.cs.start() != 0:
+            raise RuntimeError("Failed to start Csound")
+        
+        # Set initial channel values
+        self.cs.setControlChannel('frequency', 440.0)
+        self.cs.setControlChannel('amplitude', 0.5)
+        self.cs.setControlChannel('filterFreq', 2000.0)
+        
+        print("Synthesizer initialized")
+        
+    def play_note(self, freq, dur=1.0):
+        '''Play a note at given frequency'''
+        self.cs.setControlChannel('frequency', freq)
+        self.cs.eventString(f'i 1 0 {dur}')
+        
+    def set_filter(self, freq):
+        '''Set filter cutoff frequency'''
+        self.cs.setControlChannel('filterFreq', freq)
+        
+    def set_amplitude(self, amp):
+        '''Set amplitude (0.0 to 1.0)'''
+        self.cs.setControlChannel('amplitude', amp)
+        
+    def perform(self):
+        '''Process one buffer'''
+        return self.cs.performKsmps() == 0
+        
+    def cleanup(self):
+        '''Cleanup Csound instance'''
+        del self.cs
+
+def main():
+    # Create synthesizer
+    synth = SimpleSynth()
+    synth.setup()
+    
+    # Musical notes (C major scale)
+    notes = [
+        261.63,  # C4
+        293.66,  # D4
+        329.63,  # E4
+        349.23,  # F4
+        392.00,  # G4
+        440.00,  # A4
+        493.88,  # B4
+        523.25,  # C5
+    ]
+    
+    print("Playing scale...")
+    
+    # Play scale with filter sweep
+    note_duration = 0.5
+    for i, note in enumerate(notes):
+        print(f"Playing note: {note:.2f} Hz")
+        
+        # Set filter frequency based on note
+        filter_freq = 500 + i * 300
+        synth.set_filter(filter_freq)
+        
+        # Play note
+        synth.play_note(note, note_duration)
+        
+        # Perform for note duration
+        start_time = time.time()
+        while time.time() - start_time < note_duration:
+            if not synth.perform():
+                break
+    
+    # Extra time for release
+    print("Finishing...")
+    for _ in range(10):
+        if not synth.perform():
+            break
+    
+    synth.cleanup()
+    print("Done")
+
+if __name__ == '__main__':
+    main()
+```
+
+## Threading example
+
+```python
+import threading
+import time
+from ctcsound import Csound
+
+class CsoundThread(threading.Thread):
+    def __init__(self):
+        super().__init__()
+        self.cs = Csound()
+        self.running = False
+        
+    def setup(self):
+        self.cs.setOption('-odac')
+        orc = '''
+        sr = 44100
+        ksmps = 64
+        nchnls = 2
+        0dbfs = 1
+        
+        instr 1
+            kfreq chnget "freq"
+            asig oscils 0.3, kfreq, 0
+            outs asig, asig
+        endin
+        '''
+        self.cs.compileOrc(orc)
+        self.cs.start()
+        self.cs.eventString('i 1 0 -1')  # Infinite duration
+        
+    def run(self):
+        self.running = True
+        while self.running:
+            if self.cs.performKsmps() != 0:
+                break
+                
+    def set_frequency(self, freq):
+        self.cs.setControlChannel('freq', freq)
+        
+    def stop(self):
+        self.running = False
+        self.join()
+
+# Usage
+csound_thread = CsoundThread()
+csound_thread.setup()
+csound_thread.start()
+
+print("Performing in background thread...")
+for i in range(10):
+    freq = 220 + i * 50
+    csound_thread.set_frequency(freq)
+    print(f"Frequency: {freq} Hz")
+    time.sleep(0.5)
+
+csound_thread.stop()
+print("Done")
+```
+
+## Type definitions
+
+Important constants and types from ctcsound:
+
+```python
+from ctcsound import (
+    CSOUND_SUCCESS,
+    CSOUND_ERROR,
+    CSOUND_INITIALIZATION,
+    CSOUND_PERFORMANCE,
+    CSOUND_MEMORY,
+    CSOUND_SIGNAL,
+    
+    CSOUND_CONTROL_CHANNEL,
+    CSOUND_AUDIO_CHANNEL,
+    CSOUND_STRING_CHANNEL,
+    CSOUND_INPUT_CHANNEL,
+    CSOUND_OUTPUT_CHANNEL,
+    
+    CS_INSTR_EVENT,
+    CS_TABLE_EVENT,
+    CS_END_EVENT,
+)
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="C API reference" icon="code" href="/bindings/c-api">
+    Explore the underlying C API
+  </Card>
+  <Card title="JavaScript bindings" icon="js" href="/bindings/javascript">
+    Use Csound in the browser
+  </Card>
+  <Card title="Examples" icon="book-open" href="https://github.com/csound/csoundAPI_examples">
+    Browse Python examples
+  </Card>
+  <Card title="ctcsound docs" icon="python" href="https://csound.com/docs/ctcsound/">
+    Complete ctcsound documentation
+  </Card>
+</CardGroup>

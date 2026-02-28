@@ -1,0 +1,129 @@
+---
+title: C API overview
+description: Introduction to the Csound C API for embedding and extending Csound
+---
+
+The Csound C API provides a comprehensive interface for embedding Csound into applications and extending its functionality. This API allows you to control all aspects of Csound's operation programmatically.
+
+## Architecture
+
+The Csound C API follows an instance-based design where you create and manage `CSOUND` instances:
+
+```c
+#include "csound.h"
+
+int main() {
+    CSOUND *csound;
+    
+    // Initialize the library
+    csoundInitialize(CSOUNDINIT_NO_SIGNAL_HANDLER);
+    
+    // Create a Csound instance
+    csound = csoundCreate(NULL, NULL);
+    
+    // Use the instance...
+    
+    // Clean up
+    csoundDestroy(csound);
+    return 0;
+}
+```
+
+## Core workflow
+
+A typical Csound application follows this sequence:
+
+1. **Initialize** - Call `csoundInitialize()` and `csoundCreate()`
+2. **Configure** - Set options with `csoundSetOption()`
+3. **Compile** - Load instruments with `csoundCompile()` or `csoundCompileOrc()`
+4. **Start** - Prepare for performance with `csoundStart()`
+5. **Perform** - Process audio in a loop with `csoundPerformKsmps()`
+6. **Cleanup** - Call `csoundReset()` and `csoundDestroy()`
+
+### Example: Complete performance cycle
+
+```c
+CSOUND *csound = csoundCreate(NULL, NULL);
+
+// Compile from command-line arguments
+int result = csoundCompile(csound, argc, argv);
+if (!result) {
+    result = csoundStart(csound);
+    while (!result) {
+        result = csoundPerformKsmps(csound);
+    }
+}
+
+csoundDestroy(csound);
+```
+
+## Return values and error handling
+
+Most Csound API functions return status codes defined in the `CSOUND_STATUS` enum:
+
+<ResponseField name="CSOUND_SUCCESS" type="0">
+  Operation completed successfully
+</ResponseField>
+
+<ResponseField name="CSOUND_ERROR" type="-1">
+  Unspecified failure
+</ResponseField>
+
+<ResponseField name="CSOUND_INITIALIZATION" type="-2">
+  Failed during initialization
+</ResponseField>
+
+<ResponseField name="CSOUND_PERFORMANCE" type="-3">
+  Failed during performance
+</ResponseField>
+
+<ResponseField name="CSOUND_MEMORY" type="-4">
+  Failed to allocate requested memory
+</ResponseField>
+
+<ResponseField name="CSOUND_SIGNAL" type="-5">
+  Termination requested by SIGINT or SIGTERM
+</ResponseField>
+
+## Thread safety
+
+Each `CSOUND` instance is independent and can be used in separate threads. However, operations on a single instance are generally not thread-safe. When accessing channels or shared data:
+
+- Use `csoundLockChannel()` and `csoundUnlockChannel()` for manual synchronization
+- Use atomic operations for control channels when available
+- Prefer the thread-safe channel get/set functions
+
+## Data types
+
+<ParamField path="CSOUND" type="struct">
+  Opaque pointer to a Csound instance. All API functions require this pointer.
+</ParamField>
+
+<ParamField path="MYFLT" type="float or double">
+  Audio sample type, either `float` or `double` depending on build configuration. Check with `csoundGetSizeOfMYFLT()`.
+</ParamField>
+
+<ParamField path="OPARMS" type="struct">
+  Configuration parameters structure. Access with `csoundGetParams()`.
+</ParamField>
+
+## API categories
+
+The C API is organized into functional groups:
+
+- [Initialization](/api/c/initialization) - Creating and configuring Csound instances
+- [Compilation](/api/c/compilation) - Loading and compiling orchestras and scores
+- [Performance](/api/c/performance) - Real-time audio processing
+- [Audio I/O](/api/c/audio-io) - Direct access to audio buffers
+- [Messaging](/api/c/messaging) - Message callbacks and logging
+- [Channels](/api/c/channels) - Software bus communication
+- [Tables](/api/c/tables) - Function table manipulation
+- [Utilities](/api/c/utilities) - Helper functions and system information
+
+## Platform considerations
+
+The API uses platform-specific visibility macros:
+
+- `PUBLIC` - Marks functions exported from the library
+- Functions are available on all platforms (Windows, macOS, Linux, WASI)
+- Header file: `csound.h` contains all public API declarations

@@ -1,0 +1,459 @@
+---
+title: Examples
+description: Real opcode implementations from the Csound codebase
+---
+
+This page presents real-world opcode examples from the Csound source code, demonstrating various patterns and techniques.
+
+## Simple k-rate opcode
+
+The LFSR (Linear Feedback Shift Register) opcode is a clean example of a k-rate opcode with state:
+
+```cpp Opcodes/lfsr.cpp
+struct LFSR : csnd::Plugin<1, 3> {
+    static constexpr char const *otypes = "k";
+    static constexpr char const *itypes = "iij";
+
+    uint8_t length_;
+    uint8_t probability_;
+    uint32_t shift_register_;
+
+    uint32_t _process() {
+        uint32_t shift_register = shift_register_;
+
+        // Toggle LSB based on probability
+        if (255 == probability_ || 
+            static_cast<uint8_t>((rand() % (255 + 1)) < probability_)) {
+            shift_register ^= 0x1;
+        }
+
+        uint32_t lsb_mask = 0x1 << (length_ - 1);
+        if (shift_register & 0x1) {
+            shift_register = (shift_register >> 1) | lsb_mask;
+        } else {
+            shift_register = (shift_register >> 1) & ~lsb_mask;
+        }
+
+        // Don't allow all zeros
+        if (!shift_register) {
+            shift_register |= ((rand() % (0x2 + 1)) << (length_ - 1));
+        }
+
+        shift_register_ = shift_register;
+        return shift_register & ~(0xffffffff << length_);
+    }
+
+    int32_t init() {
+        srand((uint32_t) time(NULL));
+        length_ = inargs[0];
+        probability_ = inargs[1];
+        shift_register_ = in_count() == 3 ? inargs[2] : 0xffffffff;
+        return OK;
+    }
+
+    int32_t kperf() {
+        outargs[0] = (int) _process();
+        return OK;
+    }
+};
+```
+
+**Registration:**
+
+```cpp Opcodes/lfsr.cpp
+#ifdef BUILD_PLUGINS
+#include <modload.h>
+void csnd::on_load(Csound *csound) {
+  csnd::plugin<LFSR>(csound, "lfsr", "k", "iij", csnd::thread::ik);
+}
+#else 
+extern "C" int32_t lfsr_init_modules(CSOUND *csound) {
+  csnd::plugin<LFSR>((csnd::Csound *) csound, "lfsr", "k", "iij", 
+                     csnd::thread::ik);
+  return OK;
+}
+#endif
+```
+
+**Key features:**
+
+- Uses static type strings (`otypes`, `itypes`) for self-defined argument types
+- Implements state variables for algorithm
+- Checks `in_count()` for optional arguments
+- Separates business logic (`_process()`) from framework methods
+
+## Template-based array operations
+
+The array opcodes demonstrate template-based design for code reuse:
+
+```cpp Opcodes/arrayops.cpp
+// Unary operator template
+template <MYFLT (*op)(MYFLT)> 
+struct ArrayOp : csnd::Plugin<1, 1> {
+  int32_t process(csnd::myfltvec &out, csnd::myfltvec &in) {
+    std::transform(in.begin(), in.end(), out.begin(),
+                   [](MYFLT f) { return op(f); });
+    return OK;
+  }
+
+  int32_t init() {
+    csnd::myfltvec &out = outargs.myfltvec_data(0);
+    csnd::myfltvec &in = inargs.myfltvec_data(0);
+    out.init(csound, in.len(), this->insdshead);
+    if (!is_perf()) process(out, in);
+    return OK;
+  }
+
+  int32_t kperf() {
+    return process(outargs.myfltvec_data(0), inargs.myfltvec_data(0));
+  }
+};
+
+// Binary operator template
+template <MYFLT (*bop)(MYFLT, MYFLT)> 
+struct ArrayOp2 : csnd::Plugin<1, 2> {
+  int32_t process(csnd::myfltvec &out, csnd::myfltvec &in1, 
+                  csnd::myfltvec &in2) {
+    std::transform(in1.begin(), in1.end(), in2.begin(), out.begin(),
+                   [](MYFLT f1, MYFLT f2) { return bop(f1, f2); });
+    return OK;
+  }
+
+  int32_t init() {
+    csnd::myfltvec &out = outargs.myfltvec_data(0);
+    csnd::myfltvec &in1 = inargs.myfltvec_data(0);
+    csnd::myfltvec &in2 = inargs.myfltvec_data(1);
+    if (UNLIKELY(in2.len() < in1.len()))
+      return csound->init_error("second input array is too short\n");
+    out.init(csound, in1.len(), this->insdshead);
+    if (!is_perf()) process(out, in1, in2);
+    return OK;
+  }
+  
+  int32_t kperf() {
+    return process(outargs.myfltvec_data(0), inargs.myfltvec_data(0),
+                   inargs.myfltvec_data(1));
+  }
+};
+
+// Array + scalar operator
+template <MYFLT (*bop)(MYFLT, MYFLT)> 
+struct ArrayOp3 : csnd::Plugin<1, 2> {
+  int32_t process(csnd::myfltvec &out, csnd::myfltvec &in, MYFLT v) {
+    for (MYFLT *s = in.begin(), *o = out.begin(); s != in.end(); s++, o++)
+      *o = bop(*s, v);
+    return OK;
+  }
+
+  int32_t init() {
+    csnd::myfltvec &out = outargs.myfltvec_data(0);
+    csnd::myfltvec &in = inargs.myfltvec_data(0);
+    out.init(csound, in.len(), this->insdshead);
+    if (!is_perf()) process(out, in, inargs[1]);
+    return OK;
+  }
+
+  int32_t kperf() {
+    return process(outargs.myfltvec_data(0), inargs.myfltvec_data(0),
+                   inargs[1]);
+  }
+};
+```
+
+**Registration of multiple opcodes:**
+
+```cpp Opcodes/arrayops.cpp
+void csnd::on_load(csnd::Csound *csound) {
+  // Unary operations
+  csnd::plugin<ArrayOp<std::ceil>>(csound, "ceil", "k[]", "k[]",
+                                   csnd::thread::ik);
+  csnd::plugin<ArrayOp<std::floor>>(csound, "floor", "k[]", "k[]",
+                                    csnd::thread::ik);
+  csnd::plugin<ArrayOp<std::sqrt>>(csound, "sqrt", "k[]", "k[]",
+                                   csnd::thread::ik);
+  csnd::plugin<ArrayOp<std::sin>>(csound, "sin", "k[]", "k[]",
+                                  csnd::thread::ik);
+  csnd::plugin<ArrayOp<std::cos>>(csound, "cos", "k[]", "k[]",
+                                  csnd::thread::ik);
+  
+  // Binary operations
+  csnd::plugin<ArrayOp2<std::pow>>(csound, "pow", "k[]", "k[]k[]",
+                                   csnd::thread::ik);
+  csnd::plugin<ArrayOp2<std::atan2>>(csound, "taninv", "k[]", "k[]k[]",
+                                     csnd::thread::ik);
+  
+  // Array + scalar operations
+  csnd::plugin<ArrayOp3<std::pow>>(csound, "pow", "k[]", "k[]k",
+                                   csnd::thread::ik);
+}
+```
+
+**Key features:**
+
+- Template parameters for operation functions
+- Code reuse across many similar opcodes
+- STL algorithms (`std::transform`) for clean array processing
+- Proper array initialization and length validation
+- Executes at init-time if no perf-time processing needed
+
+## Reduction operation
+
+The dot product opcode shows reduction operations:
+
+```cpp Opcodes/arrayops.cpp
+struct Dot : csnd::Plugin<1, 2> {
+  MYFLT process(csnd::myfltvec &in1, csnd::myfltvec &in2) {
+    return std::inner_product(in1.begin(), in1.end(), in2.begin(), 0.0);
+  }
+
+  int32_t init() {
+    csnd::myfltvec &in1 = inargs.myfltvec_data(0);
+    csnd::myfltvec &in2 = inargs.myfltvec_data(1);
+    if (UNLIKELY(in2.len() < in1.len()))
+      return csound->init_error("second input array is too short\n");
+    outargs[0] = process(in1, in2);
+    return OK;
+  }
+
+  int32_t kperf() {
+    outargs[0] = process(inargs.myfltvec_data(0), inargs.myfltvec_data(1));
+    return OK;
+  }
+};
+```
+
+**Key features:**
+
+- Arrays as input, scalar as output
+- STL algorithm `std::inner_product` for dot product
+- Length validation for array inputs
+
+## Variable argument opcode
+
+The trigger envelope opcodes demonstrate variable argument handling:
+
+```cpp Opcodes/trigEnvSegs.cpp
+struct TrigLinseg : csnd::Plugin<1, 64>
+{
+    int32_t init()
+    {
+        uint32_t argCnt = 1;
+        totalLength = 0;
+        samplingRate = this->sr();
+        playEnv = 0;
+        counter = 0;
+        outargs[0] = inargs[1];
+        segment = 0;
+        outValue = 0;
+        values.clear();
+        durations.clear();
+
+        // Parse variable arguments
+        while (argCnt < in_count())
+        {
+            if (argCnt % 2 == 0)
+                durations.push_back(inargs[argCnt] * samplingRate);
+            else
+                values.push_back(inargs[argCnt]);
+
+            argCnt++;
+        }
+
+        incr = (values[1] - values[0]) / durations[0];
+        totalLength = std::accumulate(durations.begin(), durations.end(), 0);
+        return OK;
+    }
+
+    int32_t kperf()
+    {
+       for (uint32_t i = offset; i < nsmps; i++)
+            outargs[0] = envGenerator(1);
+        return OK;
+    }
+
+    int32_t aperf()
+    {
+        for (uint32_t i = offset; i < nsmps; i++)
+            outargs(0)[i] = envGenerator(1);
+        return OK;
+    }
+
+    MYFLT envGenerator(int32_t sampIncr)
+    {
+        // Trigger envelope
+        if (inargs[0] == 1) {
+            incr = (values[1] - values[0]) / durations[0];
+            outValue = inargs[1];
+            playEnv = 1;
+        }
+
+        if (playEnv == 1 && segment < durations.size())
+        {
+            if (counter < durations[segment])
+            {
+                outValue += incr;
+                counter += sampIncr;
+            }
+            else
+            {
+                segment++;
+                counter = 0;
+                if (segment < durations.size())
+                    incr = (values[segment + 1] - values[segment]) / 
+                           durations[segment];
+            }
+        }
+        else
+        {
+            playEnv = 0;
+            counter = 0;
+            segment = 0;
+            outValue = values[values.size() - 1];
+        }
+
+        return outValue;
+    }
+
+    uint32_t samplingRate, playEnv, counter, totalLength, segment;
+    MYFLT outValue, incr;
+    std::vector<MYFLT> values;
+    std::vector<MYFLT> durations;
+};
+```
+
+**Registration:**
+
+```cpp Opcodes/trigEnvSegs.cpp
+void csnd::on_load(csnd::Csound *csound) {
+    csnd::plugin<TrigExpseg>(csound, "trigExpseg", "a", "km", 
+                             csnd::thread::ia);
+    csnd::plugin<TrigExpseg>(csound, "trigExpseg", "k", "km", 
+                             csnd::thread::ik);
+    csnd::plugin<TrigLinseg>(csound, "trigLinseg", "a", "km", 
+                             csnd::thread::ia);
+    csnd::plugin<TrigLinseg>(csound, "trigLinseg", "k", "km", 
+                             csnd::thread::ik);
+}
+```
+
+**Key features:**
+
+- `Plugin<1, 64>` allows up to 64 arguments
+- `in_count()` returns actual argument count
+- Argument type `"km"` means k-rate followed by variable args
+- Uses `std::vector` to store parsed arguments
+- Same opcode class for both k-rate and a-rate variants
+- `outargs(0)[i]` syntax for a-rate array access
+
+## Common patterns
+
+### Initialization patterns
+
+```cpp
+int32_t init() {
+  // 1. Validate inputs
+  if (inargs[0] <= 0) {
+    return csound->init_error("Invalid parameter");
+  }
+  
+  // 2. Initialize output arrays
+  csnd::myfltvec &out = outargs.myfltvec_data(0);
+  csnd::myfltvec &in = inargs.myfltvec_data(0);
+  out.init(csound, in.len(), this->insdshead);
+  
+  // 3. Allocate auxiliary memory
+  buffer.allocate(csound, buffer_size);
+  
+  // 4. Initialize state
+  phase = 0;
+  counter = 0;
+  
+  // 5. Run at init-time if no perf processing
+  if (!is_perf()) {
+    // Execute init-time version
+  }
+  
+  return OK;
+}
+```
+
+### Processing patterns
+
+```cpp
+// K-rate scalar processing
+int32_t kperf() {
+  outargs[0] = compute(inargs[0], inargs[1]);
+  return OK;
+}
+
+// K-rate array processing
+int32_t kperf() {
+  csnd::myfltvec &out = outargs.myfltvec_data(0);
+  csnd::myfltvec &in = inargs.myfltvec_data(0);
+  
+  std::transform(in.begin(), in.end(), out.begin(),
+                 [](MYFLT x) { return process(x); });
+  return OK;
+}
+
+// A-rate processing with AudioSig
+int32_t aperf() {
+  csnd::AudioSig out(this, outargs(0), true);
+  csnd::AudioSig in(this, inargs(0));
+  
+  auto in_it = in.begin();
+  for (auto &s : out) {
+    s = process(*in_it);
+    ++in_it;
+  }
+  return OK;
+}
+
+// A-rate processing with manual loop
+int32_t aperf() {
+  MYFLT *out = outargs(0);
+  MYFLT *in = inargs(0);
+  
+  for (uint32_t i = offset; i < nsmps; i++) {
+    out[i] = process(in[i]);
+  }
+  return OK;
+}
+```
+
+### Registration patterns
+
+```cpp
+// Single opcode
+void csnd::on_load(csnd::Csound *csound) {
+  csnd::plugin<MyOp>(csound, "myop", "k", "kk", csnd::thread::ik);
+}
+
+// Multiple related opcodes
+void csnd::on_load(csnd::Csound *csound) {
+  // K-rate and a-rate versions
+  csnd::plugin<MyOp>(csound, "myop", "k", "kk", csnd::thread::ik);
+  csnd::plugin<MyOp>(csound, "myop", "a", "ak", csnd::thread::ia);
+  
+  // With aliases
+  csnd::plugin<MyOp>(csound, "myop_alias", "k", "kk", csnd::thread::ik);
+}
+
+// Template-based family
+void csnd::on_load(csnd::Csound *csound) {
+  csnd::plugin<Op<func1>>(csound, "op1", "k", "k", csnd::thread::ik);
+  csnd::plugin<Op<func2>>(csound, "op2", "k", "k", csnd::thread::ik);
+  csnd::plugin<Op<func3>>(csound, "op3", "k", "k", csnd::thread::ik);
+}
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Creating opcodes" icon="wrench" href="/plugins/creating-opcodes">
+    Step-by-step tutorial for writing your own opcodes
+  </Card>
+  <Card title="API reference" icon="code" href="/plugins/opcode-framework">
+    Complete framework documentation
+  </Card>
+</CardGroup>

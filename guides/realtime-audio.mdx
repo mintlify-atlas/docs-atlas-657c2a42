@@ -1,0 +1,419 @@
+---
+title: Real-time audio configuration
+description: Configuring Csound for real-time audio input and output
+---
+
+Csound supports real-time audio through various backend drivers. Proper configuration of audio drivers, buffer sizes, and sample rates is essential for low-latency performance.
+
+## Audio output devices
+
+### Default audio device
+
+```bash
+csound -odac myfile.csd
+```
+
+The `-odac` flag selects the default audio output device using the default audio driver.
+
+### Specific audio device
+
+Specify a device by name or number:
+
+```bash
+csound -odac2 myfile.csd          # Use device number 2
+csound -odac:hw:1,0 myfile.csd    # Use specific ALSA device
+csound -odac:Built-in myfile.csd  # Use device by name
+```
+
+## Audio input devices
+
+### Default audio input
+
+```bash
+csound -iadc myfile.csd
+```
+
+### Specific input device
+
+```bash
+csound -iadc2 myfile.csd          # Use device number 2
+csound -iadc:hw:1,0 myfile.csd    # Specific ALSA device
+```
+
+### Simultaneous input and output
+
+```bash
+csound -iadc -odac myfile.csd     # Full duplex
+csound -iadc2 -odac3 myfile.csd   # Different devices
+```
+
+## Audio drivers
+
+Csound supports multiple audio backend drivers. Select a driver using the `RTAUDIO` environment variable or the `-+rtaudio` flag.
+
+### Available drivers
+
+- **PortAudio** (`portaudio` or `pa`) - Cross-platform (default on most systems)
+- **JACK** (`jack`) - Linux/macOS low-latency audio
+- **ALSA** (`alsa`) - Linux native ALSA
+- **CoreAudio** (`auhal`) - macOS native
+- **PulseAudio** (`pulse`) - Linux PulseAudio
+- **WASAPI** (`wasapi`) - Windows native
+- **ASIO** (`asio`) - Windows low-latency (requires ASIO drivers)
+
+### Selecting a driver
+
+```bash
+csound -+rtaudio=jack -odac myfile.csd
+csound -+rtaudio=alsa -odac myfile.csd
+csound -+rtaudio=portaudio -odac myfile.csd
+```
+
+Or set the environment variable:
+
+```bash
+export RTAUDIO=jack
+csound -odac myfile.csd
+```
+
+### PortAudio
+
+Default on most platforms. Good cross-platform compatibility:
+
+```bash
+csound -+rtaudio=portaudio -odac myfile.csd
+```
+
+### JACK (Linux/macOS)
+
+JACK provides professional low-latency audio routing:
+
+```bash
+jackd -d alsa -r 48000 -p 256 -n 2  # Start JACK daemon
+csound -+rtaudio=jack -odac myfile.csd
+```
+
+JACK-specific options:
+
+```bash
+csound -+rtaudio=jack -odac:system:playback_ myfile.csd
+```
+
+Csound appears as a JACK client and can be connected to other JACK applications.
+
+### ALSA (Linux)
+
+Direct ALSA access for lower latency:
+
+```bash
+csound -+rtaudio=alsa -odac:hw:0,0 myfile.csd
+csound -+rtaudio=alsa -odac:plughw:1,0 myfile.csd  # With conversion
+```
+
+List ALSA devices:
+
+```bash
+aplay -l    # List playback devices
+arecord -l  # List capture devices
+```
+
+### PulseAudio (Linux)
+
+Use PulseAudio backend:
+
+```bash
+csound -+rtaudio=pulse -odac myfile.csd
+```
+
+### CoreAudio (macOS)
+
+Native macOS audio:
+
+```bash
+csound -+rtaudio=auhal -odac myfile.csd
+```
+
+### WASAPI (Windows)
+
+Windows native low-latency:
+
+```bash
+csound -+rtaudio=wasapi -odac myfile.csd
+```
+
+### ASIO (Windows)
+
+For professional audio interfaces with ASIO drivers:
+
+```bash
+csound -+rtaudio=asio -odac myfile.csd
+```
+
+## Listing available devices
+
+List all available audio devices:
+
+```bash
+csound --devices              # List all audio devices
+csound --devices=out          # List output devices only
+csound --devices=in           # List input devices only
+```
+
+With a specific driver:
+
+```bash
+csound -+rtaudio=jack --devices
+csound -+rtaudio=alsa --devices
+```
+
+Example output:
+
+```
+audio output devices:
+    0: dac0 (Realtek ALC887-VD Analog)
+    1: dac1 (HDA Intel PCH Front Headphone)
+    2: dac2 (HD Pro Webcam C920 Analog Stereo)
+audio input devices:
+    0: adc0 (Realtek ALC887-VD Analog)
+    1: adc1 (HD Pro Webcam C920 Analog Stereo)
+```
+
+## Buffer configuration
+
+Buffer sizes directly affect latency and CPU usage.
+
+### Software buffer size
+
+The `-b` flag sets the software buffer in sample frames:
+
+```bash
+csound -odac -b 256 myfile.csd
+csound -odac --iobufsamps=512 myfile.csd
+```
+
+This is the number of sample frames per control period (`ksmps` in the orchestra).
+
+### Hardware buffer size
+
+The `-B` flag sets the hardware buffer:
+
+```bash
+csound -odac -B 1024 myfile.csd
+csound -odac --hardwarebufsamps=2048 myfile.csd
+```
+
+This is the buffer size communicated to the audio driver.
+
+### Recommended buffer sizes
+
+<Steps>
+
+### Low latency (5-12 ms)
+
+```bash
+csound -odac -b 128 -B 512 myfile.csd
+csound -odac -b 256 -B 1024 myfile.csd
+```
+
+For live performance, MIDI control, or interactive applications. Requires powerful CPU.
+
+### Standard latency (12-25 ms)
+
+```bash
+csound -odac -b 512 -B 2048 myfile.csd
+csound -odac -b 1024 -B 4096 myfile.csd
+```
+
+Good balance between latency and CPU efficiency.
+
+### High latency (25-100 ms)
+
+```bash
+csound -odac -b 2048 -B 8192 myfile.csd
+csound -odac -b 4096 -B 16384 myfile.csd
+```
+
+For CPU-intensive processing where latency is not critical.
+
+</Steps>
+
+### Buffer relationship
+
+Typically, hardware buffer should be 2-4x the software buffer:
+
+```bash
+csound -odac -b 256 -B 1024 myfile.csd   # B = 4 * b
+csound -odac -b 512 -B 2048 myfile.csd   # B = 4 * b
+```
+
+## Sample rate configuration
+
+### Override sample rate
+
+```bash
+csound -odac -r 44100 myfile.csd
+csound -odac --sample-rate=48000 myfile.csd
+csound -odac -r 96000 myfile.csd
+```
+
+### Use system sample rate
+
+```bash
+csound --use-system-sr -odac myfile.csd
+```
+
+This queries and uses the audio device's native sample rate.
+
+### Get system sample rate
+
+```bash
+csound --get-system-sr -odac
+```
+
+Prints the system sample rate and exits.
+
+## Control rate configuration
+
+The control rate (`kr`) determines how often k-rate variables update:
+
+```bash
+csound -odac -k 4410 myfile.csd          # kr = 4410 Hz
+csound -odac --control-rate=8820 myfile.csd
+```
+
+Alternatively, set `ksmps` in the orchestra:
+
+```csound
+sr = 44100
+ksmps = 10     ; kr = sr / ksmps = 4410
+```
+
+Or override from command line:
+
+```bash
+csound -odac --ksmps=16 myfile.csd
+```
+
+## Channel configuration
+
+### Number of output channels
+
+```bash
+csound -odac --nchnls=2 myfile.csd       # Stereo
+csound -odac --nchnls=4 myfile.csd       # Quadraphonic
+csound -odac --nchnls=8 myfile.csd       # 7.1 surround
+```
+
+### Number of input channels
+
+```bash
+csound -iadc -odac --nchnls_i=2 myfile.csd    # Stereo input
+csound -iadc -odac --nchnls_i=4 myfile.csd    # 4-channel input
+```
+
+## Common real-time configurations
+
+### Live performance with MIDI
+
+```bash
+csound -M0 -odac -b 256 -B 1024 -d -m0 performance.csd
+```
+
+- `-M0` = MIDI input from default device
+- `-odac` = Audio output
+- `-b 256 -B 1024` = Low latency buffers
+- `-d` = Suppress displays for better performance
+- `-m0` = Suppress messages
+
+### Audio input processing
+
+```bash
+csound -iadc -odac -b 512 -B 2048 effects.csd
+```
+
+### Multi-channel output
+
+```bash
+csound -odac --nchnls=8 -b 512 -B 2048 surround.csd
+```
+
+### JACK integration
+
+```bash
+csound -+rtaudio=jack -odac -iadc -b 256 myfile.csd
+```
+
+### Low-latency ALSA
+
+```bash
+csound -+rtaudio=alsa -odac:hw:1,0 -b 128 -B 512 myfile.csd
+```
+
+## Troubleshooting
+
+### Audio dropouts or glitches
+
+- Increase buffer sizes: `-b 1024 -B 4096`
+- Reduce number of instruments or processing
+- Use `-d` to suppress displays
+- Enable real-time scheduling (Linux): `--sched`
+- Reduce message level: `-m0`
+
+### High latency
+
+- Decrease buffer sizes: `-b 256 -B 1024`
+- Use JACK or ALSA instead of PulseAudio (Linux)
+- Use ASIO instead of MME (Windows)
+- Enable real-time scheduling
+
+### Device not found
+
+List devices and use exact name:
+
+```bash
+csound --devices
+csound -odac:"Exact Device Name" myfile.csd
+```
+
+### Sample rate mismatch
+
+Match Csound's sample rate to device:
+
+```bash
+csound --get-system-sr -odac    # Check device rate
+csound -odac -r 48000 myfile.csd  # Set matching rate
+```
+
+### Permission denied (Linux)
+
+Add user to audio group:
+
+```bash
+sudo usermod -aG audio $USER
+```
+
+## Real-time scheduling (Linux)
+
+For lowest latency, enable real-time priority:
+
+```bash
+csound --sched -odac -b 128 -B 512 -d myfile.csd
+```
+
+Requirements:
+- Must suppress displays (`-d`)
+- Must use real-time audio (`-odac` or `-iadc`)
+- May require system permissions
+
+Set specific priority:
+
+```bash
+csound --sched=90 -odac -d myfile.csd
+```
+
+Configure system limits in `/etc/security/limits.conf`:
+
+```
+@audio   -  rtprio     95
+@audio   -  memlock    unlimited
+```

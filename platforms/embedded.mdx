@@ -1,0 +1,359 @@
+---
+title: Embedded platforms
+description: Running Csound on embedded hardware like Bela and Daisy
+---
+
+Csound runs on various embedded platforms, enabling standalone audio devices and hardware instruments.
+
+## Bela
+
+Bela is a low-latency audio platform for embedded audio applications, running on BeagleBone boards.
+
+### Requirements
+
+- Bela board (BeagleBone-based)
+- Cross-compilation toolchain for armhf
+- Xenomai (real-time extensions)
+
+### Two deployment options
+
+Csound for Bela is provided in two forms:
+
+1. **BelaCsound.cpp**: C++ functions (`setup()`, `render()`, `cleanup()`) for Bela C++ projects, requiring linking to the Csound library
+
+2. **belacsound**: Standalone executable built with CMake using `-DBUILD_BELA=1`
+
+### Build on Bela board
+
+Building directly on the Bela board as root:
+
+```bash
+# Copy custom configuration
+cp Bela/Custom.cmake.bela-<your-version> Custom.cmake
+
+# Configure and build
+mkdir build && cd build
+cmake .. -DBUILD_BELA=1 -DUSE_DOUBLE=0 \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX=/usr/ \
+  -DCMAKE_CXX_FLAGS="-Werror=unused-command-line-argument" \
+  -DCMAKE_C_FLAGS="-Werror=unused-command-line-argument"
+
+make && make install
+sudo ldconfig
+```
+
+If CMake fails finding headers, re-run with `--debug-trycompile`.
+
+### Cross-compilation setup
+
+For cross-compiling from a Linux host:
+
+#### Step 1: Install toolchain
+
+On Debian/Ubuntu:
+
+```bash
+sudo apt-get install arm-linux-gnueabihf-g++ \
+  crossbuild-essential-armhf \
+  libsndfile1-dev:armhf \
+  libasound-dev:armhf
+```
+
+#### Step 2: Build Xenomai for armhf
+
+Follow Xenomai documentation to build for ARM architecture.
+
+#### Step 3: Build Bela libraries
+
+Build `libbela` and `libbelaextra` for armhf. The `crosscompile-setup.sh` script can guide you through this process.
+
+#### Step 4: Cross-compile Csound
+
+```bash
+cmake -DCMAKE_TOOLCHAIN_FILE=../Bela/crosscompile.cmake \
+  -DUSE_DOUBLE=0 \
+  -DBUILD_BELA=1 \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX=/usr/ \
+  -DBELA_HOME="$HOME/Bela" \
+  ..
+
+make
+make install
+```
+
+The `BELA_HOME` variable points to your local Bela repository (defaults to `~/Bela`).
+
+### Toolchain file
+
+The `Bela/crosscompile.cmake` configures cross-compilation:
+
+```cmake
+SET(CMAKE_SYSTEM_NAME Linux)
+SET(CMAKE_C_COMPILER arm-linux-gnueabihf-gcc)
+SET(CMAKE_CXX_COMPILER arm-linux-gnueabihf-g++)
+SET(CMAKE_FIND_ROOT_PATH /usr/arm-linux-gnueabihf)
+
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mfloat-abi=hard -mfpu=neon")
+```
+
+### Create Debian package
+
+After building with `-DCMAKE_INSTALL_PREFIX=/usr/`:
+
+```bash
+cpack -G DEB \
+  -D CPACK_DEBIAN_PACKAGE_ARCHITECTURE="armhf" \
+  -D CPACK_PACKAGE_CONTACT="Your Name <your.name@domain.com>" \
+  -D CPACK_STRIP_FILES=true
+```
+
+### Using in Bela projects
+
+Example Bela render function:
+
+```cpp
+#include <Bela.h>
+#include "BelaCsound.cpp"
+
+extern "C" Csound* csound;
+
+bool setup(BelaContext* context, void* userData) {
+    // Initialize Csound
+    if (!setupCsound("test.csd", context)) {
+        return false;
+    }
+    return true;
+}
+
+void render(BelaContext* context, void* userData) {
+    // Render Csound audio
+    renderCsound(context);
+}
+
+void cleanup(BelaContext* context, void* userData) {
+    cleanupCsound();
+}
+```
+
+## Daisy
+
+Daisy is a platform for creating standalone audio devices based on the STM32H750 ARM Cortex-M7 microcontroller.
+
+### Requirements
+
+- **arm-none-eabi toolchain**: ARM cross-compiler
+- **CMake**: Build system
+
+Install toolchain:
+
+- From ARM: https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads
+- With Daisy toolchain: https://daisy.audio/tutorials/cpp-dev-env/ (recommended)
+
+### Build libcsound.a
+
+From the top-level Csound source directory:
+
+```bash
+mkdir build
+cd build
+
+cmake .. \
+  -DCMAKE_INSTALL_PREFIX=../Daisy \
+  -DCUSTOM_CMAKE=../Daisy/Custom.cmake \
+  -DCMAKE_TOOLCHAIN_FILE=../Daisy/crosscompile.cmake
+
+make
+make install
+```
+
+This builds the static library `libcsound.a` and installs it with headers under `Daisy/lib` and `Daisy/include`.
+
+### Custom CMake configuration
+
+The `Daisy/Custom.cmake` configures a minimal Csound build:
+
+```cmake
+set(CMAKE_BUILD_TYPE "Release")
+set(BARE_METAL ON)
+set(BUILD_STATIC_LIBRARY ON)
+set(USE_LIBSNDFILE OFF)
+set(USE_ALSA OFF)
+set(USE_JACK OFF)
+set(USE_PORTMIDI OFF)
+set(USE_PORTAUDIO OFF)
+set(USE_PULSEAUDIO OFF)
+set(USE_DOUBLE OFF)  # 32-bit floats for embedded
+set(BUILD_MULTI_CORE OFF)
+set(BUILD_UTILITIES OFF)
+set(BUILD_CSOUND_COMMAND OFF)
+set(REQUIRE_PTHREADS OFF)
+```
+
+### Toolchain file
+
+The `Daisy/crosscompile.cmake` sets up ARM Cortex-M7 compilation.
+
+### Using in Daisy projects
+
+Add to your Daisy Makefile:
+
+```makefile
+# Csound library and headers
+CSOUND_DIR = path/to/csound/Daisy
+
+C_INCLUDES += \
+    -I$(CSOUND_DIR)/include/csound
+
+LDFLAGS += \
+    -L$(CSOUND_DIR)/lib \
+    -lcsound
+```
+
+Example Daisy code:
+
+```cpp
+#include "daisy_pod.h"
+#include "csound.h"
+
+using namespace daisy;
+
+DaisyPod hw;
+CSOUND* csound;
+
+void AudioCallback(AudioHandle::InputBuffer in,
+                   AudioHandle::OutputBuffer out,
+                   size_t size) {
+    // Perform one k-cycle
+    csoundPerformKsmps(csound);
+    
+    // Get output buffer
+    MYFLT* csOut = csoundGetSpout(csound);
+    int nchnls = csoundGetNchnls(csound);
+    
+    // Copy to Daisy output
+    for (size_t i = 0; i < size; i++) {
+        out[0][i] = csOut[i * nchnls];
+        out[1][i] = csOut[i * nchnls + 1];
+    }
+}
+
+int main(void) {
+    hw.Init();
+    hw.SetAudioBlockSize(32);
+    
+    // Create Csound instance
+    csound = csoundCreate(NULL);
+    
+    // Compile embedded CSD code
+    csoundCompileOrc(csound, "sr = 48000\nksmps = 32\nnchnls = 2\n0dbfs = 1\n");
+    csoundCompileOrc(csound, "instr 1\nasig oscil 0.5, 440\nouts asig, asig\nendin");
+    csoundReadScore(csound, "i 1 0 -1");
+    
+    csoundStart(csound);
+    
+    hw.StartAudio(AudioCallback);
+    
+    while (1) {
+        // Main loop
+    }
+}
+```
+
+### Example projects
+
+The `Daisy/DaisyCsoundExamples` directory contains example projects:
+
+- **DaisyCsoundProcess**: Basic audio processing
+- **DaisyCsoundMidi**: MIDI input handling
+- **DaisyCsoundGenerative**: Generative synthesis
+- **DaisyPodSynth**: Complete synthesizer
+
+## Other embedded platforms
+
+### Zynq
+
+Csound can run on Xilinx Zynq SoC devices. See `Zynq/README.md` for details.
+
+### Raspberry Pi
+
+Csound runs on Raspberry Pi using standard Linux builds:
+
+```bash
+sudo apt-get install csound
+```
+
+Or build from source using Linux instructions with appropriate ARM compiler flags.
+
+## Embedded optimization tips
+
+### Use 32-bit floats
+
+```cmake
+-DUSE_DOUBLE=0
+```
+
+32-bit floats reduce memory usage and improve performance on embedded processors.
+
+### Minimize opcodes
+
+Build only required opcodes to reduce binary size:
+
+```cmake
+set(BUILD_DEPRECATED_OPCODES OFF)
+set(BUILD_OSC_OPCODES OFF)
+```
+
+### Optimize buffer sizes
+
+Match hardware buffer sizes:
+
+```csd
+<CsOptions>
+-b 32    ; Match hardware buffer
+-B 128   ; Output buffer
+</CsOptions>
+```
+
+### Disable unnecessary features
+
+```cmake
+set(USE_LIBSNDFILE OFF)  # No file I/O needed
+set(BUILD_UTILITIES OFF)  # No command-line tools
+set(BUILD_MULTI_CORE OFF) # Single-core optimization
+```
+
+## Real-time performance
+
+### Priority settings
+
+Set real-time thread priority in your application:
+
+```cpp
+#include <pthread.h>
+#include <sched.h>
+
+void setRealtimePriority() {
+    struct sched_param param;
+    param.sched_priority = 99;
+    pthread_setschedparam(pthread_self(), SCHED_FIFO, &param);
+}
+```
+
+### Xenomai (Bela)
+
+Bela uses Xenomai for hard real-time performance. The build process automatically configures this.
+
+## Memory constraints
+
+Embedded systems have limited RAM. Monitor memory usage:
+
+```cpp
+// Check memory usage
+size_t memUsed = csoundGetKsmps(csound) * 
+                 csoundGetNchnls(csound) * 
+                 sizeof(MYFLT);
+```
+
+Keep CSD files simple and avoid large tables or buffers.

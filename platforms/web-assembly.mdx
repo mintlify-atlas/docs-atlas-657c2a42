@@ -1,0 +1,246 @@
+---
+title: WebAssembly/Browser support
+description: Running Csound in web browsers using WebAssembly
+---
+
+Csound can run directly in web browsers through WebAssembly, enabling interactive web-based audio applications without plugins.
+
+## @csound/browser package
+
+The official browser package is `@csound/browser`, which provides a complete JavaScript/TypeScript API for Csound.
+
+```bash
+npm install @csound/browser
+```
+
+or
+
+```bash
+yarn add @csound/browser
+```
+
+## Basic usage
+
+```javascript
+import { Csound } from '@csound/browser';
+
+// Initialize Csound
+const csound = await Csound();
+
+if (csound) {
+  // Compile and run Csound code
+  await csound.compileCSD(`
+    <CsoundSynthesizer>
+    <CsOptions>
+    -odac
+    </CsOptions>
+    <CsInstruments>
+    sr = 44100
+    ksmps = 32
+    nchnls = 2
+    0dbfs = 1
+
+    instr 1
+      asig oscil 0.5, 440
+      outs asig, asig
+    endin
+    </CsInstruments>
+    <CsScore>
+    i 1 0 2
+    </CsScore>
+    </CsoundSynthesizer>
+  `, 1);
+
+  await csound.start();
+  await csound.perform();
+}
+```
+
+## Web Audio integration
+
+Csound integrates with the Web Audio API using AudioWorklet:
+
+```javascript
+const audioContext = new AudioContext();
+
+const csound = await Csound({
+  audioContext: audioContext,
+  outputChannelCount: 2,
+  inputChannelCount: 2,
+  autoConnect: true  // Auto-connect to audioContext.destination
+});
+```
+
+### Custom audio routing
+
+Disable auto-connect to create custom audio graphs:
+
+```javascript
+const csound = await Csound({
+  audioContext: audioContext,
+  autoConnect: false
+});
+
+// Listen for the AudioNode creation
+csound.on('onAudioNodeCreated', (audioNode) => {
+  // Connect to custom nodes
+  const gainNode = audioContext.createGain();
+  gainNode.gain.value = 0.5;
+  
+  audioNode.connect(gainNode);
+  gainNode.connect(audioContext.destination);
+});
+```
+
+## Breaking changes in v7.0.0+
+
+<Warning>
+  ScriptProcessorNode support has been removed. The library now exclusively uses AudioWorklet, which is supported in all modern browsers (Chrome 64+, Firefox 76+, Safari 14.1+).
+</Warning>
+
+If you were using `useSPN: true`, simply remove this parameter. The library will automatically use the superior AudioWorklet API.
+
+## Worker mode
+
+Run Csound in a Web Worker for better performance:
+
+```javascript
+const csound = await Csound({
+  useWorker: true,
+  useSAB: true  // Use SharedArrayBuffers if available
+});
+```
+
+<Note>
+  SharedArrayBuffers require specific HTTP headers on your server:
+  - `Cross-Origin-Opener-Policy: same-origin`
+  - `Cross-Origin-Embedder-Policy: require-corp`
+</Note>
+
+## File system access
+
+Csound includes an in-browser filesystem based on Node.js 'fs' module:
+
+```javascript
+// Write a file
+await csound.fs.writeFile('/sample.wav', audioData);
+
+// Read a file
+const data = await csound.fs.readFile('/sample.wav');
+
+// List directory
+const files = await csound.fs.readdir('/');
+```
+
+## Control channels
+
+Communicate with running Csound code:
+
+```javascript
+// Set control channel
+await csound.setControlChannel('volume', 0.8);
+
+// Get control channel
+const freq = await csound.getControlChannel('frequency');
+
+// String channels
+await csound.setStringChannel('filename', 'sample.wav');
+const path = await csound.getStringChannel('filepath');
+```
+
+## Events and messaging
+
+Listen to Csound events:
+
+```javascript
+// Performance events
+csound.on('realtimePerformanceStarted', () => {
+  console.log('Performance started');
+});
+
+csound.on('realtimePerformanceEnded', () => {
+  console.log('Performance ended');
+});
+
+// Message output
+csound.on('message', (message) => {
+  console.log('Csound:', message);
+});
+```
+
+Available events:
+- `play`, `pause`, `stop`
+- `realtimePerformanceStarted`, `realtimePerformancePaused`, `realtimePerformanceResumed`, `realtimePerformanceEnded`
+- `renderStarted`, `renderEnded`
+- `onAudioNodeCreated`
+- `message`
+
+## MIDI support
+
+Use the Web MIDI API:
+
+```javascript
+// Send MIDI message (status, data1, data2)
+await csound.midiMessage(144, 60, 100);  // Note on, middle C, velocity 100
+await csound.midiMessage(128, 60, 0);    // Note off, middle C
+
+// Get MIDI device list
+const devices = await csound.getMIDIDevList(0);  // 0 for input, 1 for output
+```
+
+## Building from source
+
+To build the WebAssembly version from source on Linux:
+
+### Requirements
+
+- Docker
+- Emscripten toolchain (via Docker)
+
+### Build steps
+
+```bash
+# Install Docker
+sudo apt install docker.io
+
+# Add user to docker group
+sudo usermod -a -G docker $USER
+
+# Build Docker image
+cd csound
+docker build -t csound-wasm ./platform/wasm
+
+# Bootstrap vcpkg
+docker run -it --rm -v $(pwd):$(pwd) --user ${UID}:1000 \
+  -w $(pwd) csound-wasm './vcpkg/bootstrap-vcpkg.sh'
+
+# Build Csound (release)
+docker run -it --rm -v $(pwd):$(pwd) --user ${UID}:1000 \
+  -w $(pwd) csound-wasm './platform/wasm/build_release.sh'
+
+# Build Csound (debug)
+docker run -it --rm -v $(pwd):$(pwd) --user ${UID}:1000 \
+  -w $(pwd) csound-wasm './platform/wasm/build_debug.sh'
+```
+
+## Plugin compilation
+
+Custom opcodes can be compiled as WebAssembly plugins. See `PLUGIN_COMPILATION.md` in the wasm directory for details.
+
+## Development
+
+When developing `@csound/browser` locally:
+
+```bash
+# In csound/wasm
+yarn link
+
+# In csound/wasm/browser
+yarn link @csound/wasm
+```
+
+This creates a symlink to build with your local WASM binary.
+
+## License
+
+`@csound/browser` is licensed under the Apache License 2.0. The `@csound/wasm-bin` package (containing the compiled WebAssembly binary) remains licensed under LGPL-2.1, as required by the Csound core library.

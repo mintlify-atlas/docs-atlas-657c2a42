@@ -1,0 +1,365 @@
+---
+title: csoundCore.h
+description: Internal Csound engine structures and module API
+---
+
+The `csoundCore.h` header provides access to internal Csound engine structures and the module API. This header is primarily used by plugin developers and those extending Csound functionality.
+
+<Warning>
+This header should not be included directly by host applications or standard plugins. Use `csdl.h` for plugin development instead.
+</Warning>
+
+## Overview
+
+This header defines:
+- Internal engine data structures
+- Opcode and instrument definitions
+- Memory management structures
+- Function table internals
+- Type system interfaces
+- Utility functions for plugin development
+
+## Key structures
+
+### Opcode entry
+
+```c
+typedef struct oentry {
+  char *opname;                 // Opcode name
+  size_t dsblksiz;              // Data structure size
+  int32_t flags;                // Opcode flags
+  char *outypes;                // Output types (external format)
+  char *intypes;                // Input types (external format)
+  SUBR init;                    // Init-time function
+  SUBR perf;                    // Performance function
+  SUBR deinit;                  // Deinit function
+  void *useropinfo;             // User opcode parameters
+  int32_t deprecated;           // Deprecation flag
+} OENTRY;
+```
+
+Array type format:
+- External format: `"k[]"`, `"a[][]"`, `"S[]"`, `":TypeName;[]"`
+- Used in `outypes` and `intypes` strings
+- Converted to internal format by `split_args()`
+
+### Opcode overloads
+
+```c
+typedef struct oentries {
+  int32_t count;                // Number of entries
+  OENTRY *entries[0];           // Extended by count entries
+} OENTRIES;
+```
+
+### Parsed orchestra text
+
+```c
+typedef struct text {
+  uint16_t linenum;             // Line number in orchestra file
+  uint64_t locn;                // File location
+  OENTRY *oentry;               // Opcode entry
+  char *opcod;                  // Opcode name pointer
+  ARGLST *inlist;               // Input arguments
+  ARGLST *outlist;              // Output arguments
+  ARG *inArgs;                  // Input arg indices
+  uint32_t inArgCount;
+  ARG *outArgs;                 // Output arg indices
+  uint32_t outArgCount;
+} TEXT;
+```
+
+### Instrument definition
+
+```c
+typedef struct instr {
+  struct op *nxtop;             // Linked list of opcodes
+  TEXT t;                       // Instrument text
+  int32_t pmax, vmax, pextrab;  // Argument and data sizes
+  CS_VAR_POOL *varPool;         // Variable pool
+  int16 muted;                  // Mute flag
+  int32 opdstot;                // Total opcode data size
+  MYFLT *psetdata;              // Pset data
+  struct insds *instance;       // Active instances
+  struct insds *lst_instance;   // Last instance
+  struct insds *act_instance;   // Free instances
+  struct instr *nxtinstxt;      // Next instrument
+  int32_t active;               // Activation count
+  int32_t pending_release;      // Releasing count
+  int32_t maxalloc;             // Maximum allocations
+  int32_t turnoff_mode;         // Turnoff mode
+  MYFLT cpuload;                // CPU load percentage
+  struct opcodinfo *opcode_info; // UDO info
+  char *insname;                // Instrument name
+  int32_t instcnt;              // Instance count
+  int32_t isNew;                // New definition flag
+  int32_t nocheckpcnt;          // Skip p-count check
+} INSTRTXT;
+```
+
+### Instrument instance
+
+```c
+typedef struct insds {
+  struct opds *nxti;            // Init-time opcodes chain
+  struct opds *nxtp;            // Performance opcodes chain
+  struct opds *nxtd;            // Deinit opcodes chain
+  struct insds *nxtinstance;    // Next allocated instance
+  struct insds *prvinstance;    // Previous instance
+  struct insds *nxtact;         // Next active instance
+  struct insds *prvact;         // Previous active
+  struct insds *nxtoff;         // Next to terminate
+  FDCH *fdchp;                  // File handles
+  AUXCH *auxchp;                // Auxiliary memory
+  int32_t xtratim;              // Extra release time
+  MCHNBLK *m_chnbp;             // MIDI channel info
+  struct insds *nxtolap;        // Overlapping MIDI voice
+  int16 insno;                  // Instrument number
+  INSTRTXT *instr;              // Instrument definition
+  int16 m_sust;                 // MIDI sustain flag
+  unsigned char m_pitch;        // MIDI pitch
+  unsigned char m_veloc;        // MIDI velocity
+  char relesing;                // Release flag
+  char actflg;                  // Active flag
+  double offbet;                // Turn-off beat time
+  double offtim;                // Turn-off seconds
+  CSOUND *csound;               // Csound engine pointer
+  uint64_t kcounter;            // K-cycle counter
+  MYFLT esr, ekr;               // Local sr and kr
+  uint32_t ksmps;               // Local ksmps
+  uint32_t ksmps_offset;        // Sample-accurate offset
+  uint32_t ksmps_no_end;        // Early exit samples
+  MYFLT *spin;                  // Audio input offset
+  MYFLT *spout;                 // Audio output offset
+  MYFLT *lclbas;                // Local variable base
+  char *strarg;                 // String argument
+  uint64_t instance_id;         // Instance ID
+  CS_VAR_MEM p0, p1, p2, p3;    // P-field values
+} INSDS;
+```
+
+### Opcode instance
+
+```c
+typedef struct opds {
+  struct opds *nxti;            // Next in init chain
+  struct opds *nxtp;            // Next in perf chain
+  struct opds *nxtd;            // Next in deinit chain
+  SUBR init;                    // Init function
+  SUBR perf;                    // Perf function
+  SUBR deinit;                  // Deinit function
+  OPTXT *optext;                // Orchestra text
+  INSDS *insdshead;             // Owner instrument instance
+} OPDS;
+```
+
+## Data type structures
+
+### Array data
+
+```c
+struct arraydat {
+  int32_t dimensions;           // Number of dimensions
+  int32_t *sizes;               // Size of each dimension
+  int32_t arrayMemberSize;      // Size of each item
+  const struct cstype *arrayType; // Array type
+  MYFLT *data;                  // Array data
+  size_t allocated;             // Allocated size
+};
+```
+
+### String data
+
+```c
+struct stringdat {
+  char *data;                   // Null-terminated string
+  size_t size;                  // Total allocated size
+  int64_t timestamp;            // Update timestamp
+  int32_t refcount;             // Reference count (0 = unmanaged)
+};
+
+#define MAX_STRINGDAT_SIZE 0xFFFFFFFF
+```
+
+### Complex numbers
+
+```c
+typedef struct complexdat {
+  MYFLT real;
+  MYFLT imag;
+  int32_t isPolar;              // Polar representation flag
+} COMPLEXDAT;
+```
+
+## Memory structures
+
+### Auxiliary memory
+
+```c
+typedef struct auxch {
+  struct auxch *nxtchp;         // Next in chain
+  size_t size;                  // Allocation size
+  void *auxp;                   // Memory pointer
+  void *endp;                   // End pointer
+} AUXCH;
+```
+
+Callback for auxiliary memory allocation:
+
+```c
+typedef AUXCH *(*aux_cb)(CSOUND *, void *, AUXCH *);
+```
+
+### File handles
+
+```c
+typedef struct fdch {
+  struct fdch *nxtchp;          // Next in chain
+  void *fd;                     // File handle
+} FDCH;
+```
+
+## Function tables
+
+```c
+typedef struct {
+  uint32_t flen;                // Table length (excluding guard)
+  int32 lenmask;                // Length mask for power-of-2
+  int32 lobits;                 // log2(MAXLEN / flen)
+  int32 lomask;                 // 2^lobits - 1
+  MYFLT lodiv;                  // 1 / 2^lobits
+  MYFLT cvtbas, cpscvt;         // Conversion factors
+  int16 loopmode1, loopmode2;   // Loop modes
+  int32 begin1, end1;           // Sustain loop points
+  int32 begin2, end2;           // Release loop points
+  int32 soundend, flenfrms;     // Sound file info
+  int32 nchanls;                // Number of channels
+  int32 fno;                    // Table number
+  MYFLT sr;                     // Sampling rate
+  MYFLT *args;                  // Generator arguments
+  int32_t argcnt;               // Argument count
+  GEN01ARGS gen01args;          // GEN01 parameters
+  MYFLT *ftable;                // Table data (flen + 1)
+} FUNC;
+```
+
+## Utility macros
+
+### Access instrument/opcode data
+
+```c
+#define CS_KSMPS (p->h.insdshead->ksmps)
+#define CS_KCNT (p->h.insdshead->kcounter)
+#define CS_EKR (p->h.insdshead->ekr)
+#define CS_ESR (p->h.insdshead->esr)
+#define CS_ONEDSR (p->h.insdshead->onedsr)
+#define CS_ONEDKSMPS (p->h.insdshead->onedksmps)
+#define CS_SPIN (p->h.insdshead->spin)
+#define CS_SPOUT (p->h.insdshead->spout)
+```
+
+### Check argument types
+
+```c
+#define IS_ASIG_ARG(x) (GetTypeForArg(x) == csound->GetType(csound, "a"))
+#define IS_STR_ARG(x) (GetTypeForArg(x) == csound->GetType(csound, "S"))
+#define IS_KSIG_ARG(x) (GetTypeForArg(x) == csound->GetType(csound, "k"))
+#define IS_INIT_ARG(x) (GetTypeForArg(x) == csound->GetType(csound, "i"))
+#define IS_FSIG_ARG(x) (GetTypeForArg(x) == csound->GetType(csound, "f"))
+#define IS_ARRAY_ARG(x) (GetTypeForArg(x) == csound->GetType(csound, "["))
+```
+
+## Inline utility functions
+
+### Phase modulo-1
+
+```c
+static inline MYFLT PHMOD1(MYFLT p) {
+  return p < 0 ? p - (int64_t)(p-1) : p - (uint64_t)p;
+}
+```
+
+### Integer power
+
+```c
+static inline double intpow(MYFLT x, int32_t n);
+```
+
+### String code detection
+
+```c
+static inline int32_t isstrcod(MYFLT xx);
+static inline int32_t IsStringCode(MYFLT f);
+```
+
+### Opcode attributes
+
+```c
+static inline int32_t GetInputArgCnt(OPDS *p);
+static inline char *GetInputArgName(OPDS *p, uint32_t n);
+static inline int32_t GetOutputArgCnt(OPDS *p);
+static inline char *GetOutputArgName(OPDS *p, uint32_t n);
+static inline CS_TYPE *GetTypeForArg(void *argPtr);
+```
+
+### MIDI access
+
+```c
+static inline int32_t GetMidiChannelNumber(OPDS *p);
+static inline int32_t GetMidiNoteNumber(OPDS *p);
+static inline int32_t GetMidiVelocity(OPDS *p);
+static inline MCHNBLK *GetMidiChannel(OPDS *p);
+```
+
+### Performance attributes
+
+```c
+static inline int32_t GetReleaseFlag(void *p);
+static inline double GetOffTime(OPDS *p);
+static inline CS_VAR_MEM *GetPFields(void *p);
+static inline int32_t GetInstrumentNumber(OPDS *p);
+static inline uint32_t GetLocalKsmps(OPDS *p);
+static inline MYFLT GetLocalSr(OPDS *p);
+static inline MYFLT GetLocalKr(OPDS *p);
+static inline uint64_t GetLocalKcounter(OPDS *p);
+```
+
+## Usage context
+
+This header is included when building Csound itself or when developing modules that need deep engine access:
+
+```c
+#ifdef CS_INTERNAL
+#include "csoundCore.h"
+#else
+#include "csdl.h"
+#endif
+```
+
+## CSOUND_ structure
+
+The `CSOUND_` structure provides function pointers for plugins to access library functionality without compile-time linkage:
+
+```c
+struct CSOUND_ {
+  // Attributes
+  uint32_t (*GetNchnls)(CSOUND *);
+  MYFLT (*Get0dBFS)(CSOUND *);
+  // Memory
+  void (*AuxAlloc)(CSOUND *, size_t, AUXCH *);
+  void *(*Malloc)(CSOUND *, size_t);
+  // Tables
+  FUNC *(*FTFind)(CSOUND *, MYFLT *argp);
+  // Messages
+  void (*Message)(CSOUND *, const char *fmt, ...);
+  void (*Warning)(CSOUND *, const char *msg, ...);
+  int32_t (*InitError)(CSOUND *, const char *msg, ...);
+  // ... many more function pointers
+};
+```
+
+## See also
+
+- [plugin.h](/api/headers/plugin) - Plugin framework
+- [csound.h](/api/headers/csound) - Public API
+- [csound_compiler.h](/api/headers/compiler) - Parsing interface

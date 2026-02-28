@@ -1,0 +1,459 @@
+---
+title: Csound class
+description: C++ wrapper for the Csound C API
+---
+
+The `Csound` class provides an object-oriented C++ interface to the Csound engine, wrapping the C API with virtual methods and automatic resource management.
+
+## Class definition
+
+```cpp
+class Csound {
+protected:
+  CSOUND *csound;
+public:
+  // Constructors and destructor
+  Csound();
+  explicit Csound(CSOUND *csound_);
+  explicit Csound(void *hostData, const char *opcodedir = NULL);
+  virtual ~Csound();
+  
+  // Core methods...
+};
+```
+
+**Location:** `include/csound.hpp:103`
+
+## Constructors
+
+### Default constructor
+
+```cpp
+Csound()
+```
+
+Creates a new Csound instance using `csoundCreate()`.
+
+### From existing CSOUND pointer
+
+```cpp
+explicit Csound(CSOUND *csound_)
+```
+
+Wraps an existing `CSOUND*` pointer. The `Csound` object will call `csoundDestroy()` on the pointer when destroyed.
+
+### With host data
+
+```cpp
+explicit Csound(void *hostData, const char *opcodedir = NULL)
+```
+
+Creates a new instance with host data and optional opcode directory.
+
+**Parameters:**
+- `hostData` - Pointer to host application data
+- `opcodedir` - Optional path to plugin opcodes directory
+
+## Compilation methods
+
+### CompileOrc
+
+```cpp
+int32_t CompileOrc(const char *str, int32_t async = 0)
+```
+
+Compiles orchestra code from a string.
+
+**Parameters:**
+- `str` - Orchestra code as string
+- `async` - If non-zero, compile asynchronously (default: 0)
+
+**Returns:** `CSOUND_SUCCESS` on success
+
+### Compile
+
+```cpp
+int32_t Compile(int32_t argc, const char **argv)
+int32_t Compile(const char *csdName)
+int32_t Compile(const char *orcName, const char *scoName)
+int32_t Compile(const char *arg1, const char *arg2, const char *arg3)
+// ... additional overloads
+```
+
+Multiple overloaded versions for compiling with different argument combinations.
+
+**Example:**
+```cpp
+Csound cs;
+cs.Compile("test.csd");
+// or
+cs.Compile("test.orc", "test.sco");
+```
+
+### CompileCSD
+
+```cpp
+int32_t CompileCSD(const char *csd, int32_t mode, int32_t async = 0)
+```
+
+Compiles a CSD from string.
+
+**Parameters:**
+- `csd` - CSD content as string  
+- `mode` - Compilation mode
+- `async` - Asynchronous compilation flag
+
+## Performance methods
+
+### Start
+
+```cpp
+int32_t Start()
+```
+
+Prepares Csound for performance. Must be called after `Compile()` and before `PerformKsmps()`.
+
+### PerformKsmps
+
+```cpp
+int32_t PerformKsmps()
+```
+
+Performs one control sample (ksmps audio samples) of a score.
+
+**Returns:**
+- `0` - Performance continuing
+- Non-zero - End of score or error
+
+**Example:**
+```cpp
+Csound cs;
+cs.Compile("test.csd");
+cs.Start();
+while (cs.PerformKsmps() == 0);
+cs.Reset();
+```
+
+### Reset
+
+```cpp
+void Reset()
+```
+
+Resets Csound to its initial state. Calls `csoundReset()` and performs cleanup.
+
+## Audio parameter methods
+
+### GetSr
+
+```cpp
+MYFLT GetSr()
+```
+
+Returns the audio sampling rate (sr).
+
+### GetKr
+
+```cpp
+MYFLT GetKr()
+```
+
+Returns the control rate (kr).
+
+### GetKsmps
+
+```cpp
+int32_t GetKsmps()
+```
+
+Returns the number of audio samples per control sample (ksmps).
+
+### Get0dBFS
+
+```cpp
+MYFLT Get0dBFS()
+```
+
+Returns the 0 dBFS reference amplitude.
+
+### GetChannels
+
+```cpp
+int32_t GetChannels(int32_t isInput = 0)
+```
+
+Returns number of audio channels.
+
+**Parameters:**
+- `isInput` - If non-zero, returns input channels; otherwise output channels
+
+## Channel communication
+
+### SetControlChannel
+
+```cpp
+void SetControlChannel(const char *name, double value)
+void SetChannel(const char *name, double value)  // alias
+```
+
+Sets a control channel value.
+
+### GetControlChannel
+
+```cpp
+MYFLT GetControlChannel(const char *name, int32_t *err = NULL)
+MYFLT GetChannel(const char *name, int32_t *err = NULL)  // alias
+```
+
+Gets a control channel value.
+
+**Parameters:**
+- `name` - Channel name
+- `err` - Optional pointer to error code
+
+### SetStringChannel
+
+```cpp
+void SetStringChannel(const char *name, const char *string)
+void SetChannel(const char *name, const char *string)  // alias
+```
+
+Sets a string channel value.
+
+### GetStringChannel
+
+```cpp
+void GetStringChannel(const char *name, char *string)
+```
+
+Gets a string channel value.
+
+### SetAudioChannel / GetAudioChannel
+
+```cpp
+void SetAudioChannel(const char *name, MYFLT *samples)
+void GetAudioChannel(const char *name, MYFLT *samples)
+```
+
+Sets or gets audio channel data.
+
+### GetChannelPtr
+
+```cpp
+int32_t GetChannelPtr(void* &p, const char *name, int32_t type)
+```
+
+Gets a pointer to a channel for direct access.
+
+**Example:**
+```cpp
+Csound cs;
+void *ptr;
+cs.GetChannelPtr(ptr, "myChannel", CSOUND_CONTROL_CHANNEL);
+MYFLT *channel = (MYFLT*)ptr;
+*channel = 440.0;  // Set directly
+```
+
+## Score events
+
+### Event
+
+```cpp
+void Event(int32_t type, MYFLT *pFields, int32_t numFields, int32_t async = 0)
+```
+
+Sends a score event.
+
+**Parameters:**
+- `type` - Event type character (e.g., 'i', 'f', 'e')
+- `pFields` - Array of p-fields
+- `numFields` - Number of p-fields
+- `async` - Asynchronous flag
+
+### EventString
+
+```cpp
+void EventString(const char *s, int32_t async = 0)
+```
+
+Sends a score event as a string.
+
+**Example:**
+```cpp
+cs.EventString("i 1 0 1 440 0.5");
+```
+
+## Function table methods
+
+### TableLength
+
+```cpp
+int32_t TableLength(int32_t table)
+```
+
+Returns the length of a function table.
+
+### GetTable
+
+```cpp
+int32_t GetTable(MYFLT **tablePtr, int32_t tableNum)
+```
+
+Gets a pointer to a function table's data.
+
+**Returns:** Table length, or error code
+
+### TableCopyIn / TableCopyOut
+
+```cpp
+void TableCopyIn(int32_t table, const MYFLT *ptable, int32_t async)
+void TableCopyOut(int32_t table, MYFLT *ptable, int32_t async)
+```
+
+Copies data into or out of a function table.
+
+## Message handling
+
+### Message
+
+```cpp
+void Message(const char *format, ...)
+void MessageS(int32_t attr, const char *format, ...)
+```
+
+Prints a message to Csound's message output.
+
+### SetMessageCallback
+
+```cpp
+void SetMessageCallback(
+  void (*csoundMessageCallback_)(CSOUND *, int32_t attr, 
+                                 const char *format, va_list valist)
+)
+```
+
+Sets a callback for message handling.
+
+### CreateMessageBuffer / DestroyMessageBuffer
+
+```cpp
+void CreateMessageBuffer(int32_t toStdOut)
+void DestroyMessageBuffer()
+```
+
+Creates/destroys an internal message buffer for retrieving messages.
+
+### GetFirstMessage
+
+```cpp
+const char *GetFirstMessage()
+int32_t GetFirstMessageAttr()
+void PopFirstMessage()
+int32_t GetMessageCnt()
+```
+
+Methods for reading buffered messages.
+
+**Example:**
+```cpp
+cs.CreateMessageBuffer(0);
+cs.Compile("test.csd");
+while (cs.GetMessageCnt() > 0) {
+  printf("%s", cs.GetFirstMessage());
+  cs.PopFirstMessage();
+}
+cs.DestroyMessageBuffer();
+```
+
+## Configuration methods
+
+### SetOption
+
+```cpp
+int32_t SetOption(const char *option)
+```
+
+Sets a command-line option.
+
+**Example:**
+```cpp
+cs.SetOption("-odac");
+cs.SetOption("--sample-rate=48000");
+```
+
+### SetHostData / GetHostData
+
+```cpp
+void SetHostData(void *hostData)
+void *GetHostData()
+```
+
+Sets/gets host application data pointer.
+
+### GetVersion
+
+```cpp
+int32_t GetVersion()
+```
+
+Returns Csound version number (e.g., 6180 for version 6.18.0).
+
+## Advanced features
+
+### GetSpin / GetSpout
+
+```cpp
+MYFLT *GetSpin()
+const MYFLT *GetSpout()
+```
+
+Returns pointers to input/output audio buffers.
+
+### GetCsound
+
+```cpp
+virtual CSOUND *GetCsound()
+virtual void SetCsound(CSOUND *csound_)
+```
+
+Gets/sets the underlying `CSOUND*` pointer.
+
+## Complete example
+
+```cpp
+#include <csound.hpp>
+#include <iostream>
+
+int main() {
+  Csound cs;
+  
+  // Configure
+  cs.SetOption("-odac");
+  cs.SetOption("-m0");
+  
+  // Compile CSD
+  if (cs.Compile("example.csd") != 0) {
+    std::cerr << "Compilation failed" << std::endl;
+    return 1;
+  }
+  
+  // Start performance
+  cs.Start();
+  
+  // Performance loop
+  while (cs.PerformKsmps() == 0) {
+    // Set control channel
+    cs.SetControlChannel("freq", 440.0 + rand() % 100);
+  }
+  
+  // Cleanup
+  cs.Reset();
+  return 0;
+}
+```
+
+## See also
+
+- [C API reference](/api/c/csound-h)
+- [Plugin framework](/api/cpp/plugin-framework)
+- [Performance thread](/api/cpp/performance-thread)

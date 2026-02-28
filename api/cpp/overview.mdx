@@ -1,0 +1,79 @@
+---
+title: C++ API overview
+description: Overview of Csound's C++ interface and plugin framework
+---
+
+Csound provides a comprehensive C++ interface that wraps the C API with object-oriented classes and modern C++ features. The C++ API includes three main components:
+
+## Core C++ wrapper
+
+The `Csound` class (defined in `csound.hpp`) provides an object-oriented wrapper around the C API. It encapsulates a `CSOUND*` instance and provides virtual methods for all major Csound operations.
+
+**Key features:**
+- RAII-based resource management with automatic cleanup
+- Virtual methods for compilation, performance, and configuration
+- Multiple overloaded convenience methods
+- Channel communication (control, audio, string, array, PVS)
+- Message handling with buffering support
+- MIDI and audio I/O configuration
+
+**Location:** `include/csound.hpp`
+
+## Plugin framework (csnd namespace)
+
+The `csnd` namespace (defined in `plugin.h`) provides a modern C++ framework for writing Csound plugins with:
+
+**Template-based plugin classes:**
+- `Plugin<N, M>` - Base class for N outputs and M inputs
+- `InPlug<N>` - Base class for N inputs (no outputs)
+- `FPlugin<N, M>` - Specialized for fsig (frequency-domain) processing
+
+**Container classes:**
+- `Vector<T>` - One-dimensional arrays
+- `AudioSig` - Audio signal wrapper with sample-accurate timing
+- `Fsig` - Frequency-domain signal container
+- `Table` - Function table access
+- `AuxMem<T>` - Auxiliary memory allocation
+
+**Utility classes:**
+- `Csound` - Engine access with convenience methods
+- `Thread` - Base class for threading
+- `Param<N>` - Parameter access template
+
+**Location:** `include/plugin.h`
+
+## Performance thread
+
+The `CsoundPerformanceThread` class (defined in `csPerfThread.hpp`) provides a high-level interface for running Csound performance in a separate thread.
+
+**Key features:**
+- Automatic thread management with Play/Pause/Stop control
+- Score event queuing during performance
+- Real-time audio recording to disk
+- Orchestra code compilation during performance
+- Process callbacks for custom processing
+- Thread-safe message queue for communication
+
+**Location:** `include/csPerfThread.hpp`
+
+## Threading utilities
+
+For systems with pthread spinlock support, `csound.hpp` provides:
+
+- `Spinlock` - Lightweight synchronization primitive
+- `Spinlocker` - RAII-style spinlock guard
+
+## C++ standard requirements
+
+The C++ API supports:
+- **C++98/C++03** - Basic functionality
+- **C++11 and later** - Enhanced features including:
+  - Deleted copy constructors
+  - `explicit` constructors
+  - Better type safety
+
+## Related pages
+
+- [Csound class](/api/cpp/csound-class) - Core C++ wrapper
+- [Plugin framework](/api/cpp/plugin-framework) - csnd namespace for plugins
+- [Performance thread](/api/cpp/performance-thread) - CsoundPerformanceThread class

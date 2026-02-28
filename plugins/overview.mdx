@@ -1,0 +1,97 @@
+---
+title: Plugin system overview
+description: Introduction to the Csound Plugin Opcode Framework (CPOF) for creating custom opcodes in C++
+---
+
+The Csound Plugin Opcode Framework (CPOF) provides a modern C++ interface for creating custom opcodes. This framework simplifies opcode development by providing type-safe abstractions and utility classes that handle many low-level details.
+
+## Key features
+
+The plugin framework offers several advantages over traditional C-based opcode development:
+
+- **C++ abstractions**: Type-safe classes that wrap Csound's C API
+- **Template-based design**: Generic plugin base classes for different input/output configurations
+- **STL-style containers**: Iterator-based access to arrays, audio signals, and fsig data
+- **Simplified memory management**: RAII-style wrappers for Csound's memory allocation
+- **Thread control**: Clear specification of execution threads (i-time, k-rate, a-rate)
+
+## Plugin architecture
+
+Plugins are built around a few core concepts:
+
+### Base classes
+
+The framework provides template base classes for different opcode types:
+
+- `Plugin<N, M>`: For opcodes with N outputs and M inputs
+- `InPlug<N>`: For opcodes with only inputs (no outputs, or multiple outputs/inputs)
+- `FPlugin<N, M>`: For fsig (spectral) processing opcodes
+
+### Container classes
+
+Utility classes provide convenient access to Csound data:
+
+- `AudioSig`: Audio signal wrapper with sample-accurate offset handling
+- `Vector<T>`: One-dimensional array container
+- `Fsig`: Phase vocoder frame data
+- `Table`: Function table container
+- `AuxMem<T>`: Dynamic memory allocation using Csound's allocator
+
+### Csound engine access
+
+The `Csound` class wraps the Csound engine, providing methods for:
+
+- Error and warning messages
+- System parameters (sample rate, control rate, channel count)
+- MIDI information
+- Memory allocation
+- FFT operations
+- Global variables
+
+## Thread types
+
+Opcodes can run at different execution rates:
+
+```cpp
+enum thread {
+  i = 1,   // Init-time only
+  k = 2,   // K-rate (control rate)
+  ik = 3,  // Init-time and k-rate
+  a = 4,   // A-rate (audio rate)
+  ia = 5   // Init-time and a-rate
+};
+```
+
+## Typical workflow
+
+Creating a plugin opcode typically involves:
+
+1. Define a struct/class inheriting from `Plugin<N, M>` or `InPlug<N>`
+2. Implement `init()` for initialization
+3. Implement `kperf()` for k-rate or `aperf()` for a-rate processing
+4. Optionally implement `deinit()` for cleanup
+5. Register the opcode using the `plugin<T>()` template function
+6. Export the registration function via `on_load()`
+
+## Build system integration
+
+Plugins are typically built as shared libraries that Csound loads dynamically. The framework supports two build modes:
+
+- **BUILD_PLUGINS**: Creates standalone plugin modules
+- **Static linking**: Integrates opcodes directly into Csound
+
+Each mode requires a different registration approach, handled via preprocessor directives.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="C++ opcode framework" icon="code" href="/plugins/opcode-framework">
+    Detailed API reference for the plugin framework
+  </Card>
+  <Card title="Creating opcodes" icon="wrench" href="/plugins/creating-opcodes">
+    Step-by-step guide to creating your first opcode
+  </Card>
+  <Card title="Examples" icon="book" href="/plugins/examples">
+    Real-world opcode implementations from the Csound codebase
+  </Card>
+</CardGroup>

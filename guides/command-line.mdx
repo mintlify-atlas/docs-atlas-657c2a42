@@ -1,0 +1,336 @@
+---
+title: Command-line usage
+description: Using Csound from the command line
+---
+
+Csound is primarily used as a command-line application. The `csound` command compiles and performs Csound code with various options for controlling audio output, MIDI input, file formats, and performance behavior.
+
+## Basic usage
+
+The basic command syntax is:
+
+```bash
+csound [flags] orchfile scorefile
+```
+
+Or with a unified CSD file:
+
+```bash
+csound [flags] file.csd
+```
+
+### Running a simple CSD file
+
+```bash
+csound xanadu.csd
+```
+
+This compiles and performs the CSD file using default settings.
+
+## Output options
+
+### Audio output
+
+```bash
+csound -odac xanadu.csd              # Output to default audio device
+csound -o output.wav xanadu.csd      # Write to WAV file
+csound -n xanadu.csd                 # No sound output (testing)
+```
+
+### File format options
+
+```bash
+csound -W -o output.wav xanadu.csd   # WAV format
+csound -A -o output.aif xanadu.csd   # AIFF format
+csound -J -o output.sf xanadu.csd    # IRCAM format
+csound -h -o output.raw xanadu.csd   # Raw (no header)
+```
+
+Alternatively, use the long format:
+
+```bash
+csound --format=wav -o output.wav xanadu.csd
+csound --format=aiff -o output.aif xanadu.csd
+csound --ogg -o output.ogg xanadu.csd
+csound --mpeg -o output.mp3 xanadu.csd
+```
+
+### Sample format
+
+```bash
+csound -f -o output.wav xanadu.csd   # 32-bit float
+csound -s -o output.wav xanadu.csd   # 16-bit signed integer
+csound -3 -o output.wav xanadu.csd   # 24-bit
+csound -l -o output.wav xanadu.csd   # 32-bit integer
+csound -c -o output.wav xanadu.csd   # 8-bit signed char
+```
+
+Long format:
+
+```bash
+csound --format=float -o output.wav xanadu.csd
+csound --format=short -o output.wav xanadu.csd
+csound --format=24bit -o output.wav xanadu.csd
+```
+
+## Input options
+
+### Audio input
+
+```bash
+csound -iadc -odac live.csd          # Use default audio input device
+csound -i input.wav -o output.wav process.csd
+```
+
+### MIDI input
+
+```bash
+csound -M0 -odac midi.csd            # Use default MIDI device (device 0)
+csound -F input.mid -odac midi.csd   # Read from MIDI file
+```
+
+## Performance control
+
+### Sample rate and control rate
+
+```bash
+csound -r 48000 xanadu.csd           # Override sample rate to 48kHz
+csound -k 4410 xanadu.csd            # Override control rate to 4410 Hz
+csound --sample-rate=96000 xanadu.csd
+csound --control-rate=8820 xanadu.csd
+```
+
+### Channels and amplitude
+
+```bash
+csound --nchnls=2 xanadu.csd         # Override number of channels
+csound --nchnls_i=4 xanadu.csd       # Override input channels
+csound --0dbfs=1 xanadu.csd          # Set 0dBFS value
+```
+
+### Buffer sizes
+
+```bash
+csound -b 512 -odac xanadu.csd       # Software buffer size
+csound -B 2048 -odac xanadu.csd      # Hardware buffer size
+csound --iobufsamps=256 -odac xanadu.csd
+csound --hardwarebufsamps=1024 -odac xanadu.csd
+```
+
+Smaller buffer sizes reduce latency but increase CPU load. Typical values:
+- `-b 512 -B 2048` for low latency
+- `-b 1024 -B 4096` for standard use
+- `-b 2048 -B 8192` for high CPU load
+
+### Tempo
+
+```bash
+csound -t 120 xanadu.csd             # Set tempo to 120 BPM
+csound --tempo=90 xanadu.csd
+```
+
+## Message and debug options
+
+### Message level
+
+The `-m` flag controls message verbosity (sum of values):
+
+```bash
+csound -m 0 xanadu.csd               # Suppress messages
+csound -m 7 xanadu.csd               # Show all messages (1+2+4)
+csound -m 135 xanadu.csd             # Show messages + benchmarks (7+128)
+```
+
+Message level values:
+- `1` = note amplitudes
+- `2` = out-of-range messages
+- `4` = warnings
+- `32` = note amps in dB
+- `64` = colored note amps
+- `128` = benchmark information
+
+Alternatively:
+
+```bash
+csound --messagelevel=7 xanadu.csd
+csound --m-amps=1 --m-warnings=1 --m-benchmarks=1 xanadu.csd
+```
+
+### Verbose mode
+
+```bash
+csound -v xanadu.csd                 # Verbose orchestra translation
+csound --verbose xanadu.csd
+```
+
+### Display suppression
+
+```bash
+csound -d xanadu.csd                 # Suppress all displays
+csound -g xanadu.csd                 # ASCII displays only
+csound -G xanadu.csd                 # PostScript displays
+csound --nodisplays xanadu.csd
+csound --asciidisplay xanadu.csd
+```
+
+## Utility functions
+
+### List opcodes
+
+```bash
+csound -z                            # List all opcodes
+csound --list-opcodes
+csound --list-opcodes2               # Alternative format
+```
+
+### List audio/MIDI devices
+
+```bash
+csound --devices                     # List audio devices
+csound --devices=in                  # List input devices only
+csound --devices=out                 # List output devices only
+csound --midi-devices                # List MIDI devices
+csound --midi-devices=in
+```
+
+### Syntax check
+
+```bash
+csound --syntax-check-only xanadu.csd
+```
+
+### Version information
+
+```bash
+csound --version
+```
+
+## Advanced options
+
+### Multi-threading
+
+```bash
+csound -j 4 xanadu.csd               # Use 4 threads for performance
+csound --num-threads=8 xanadu.csd
+```
+
+### Real-time scheduling (Linux)
+
+```bash
+csound --sched -odac xanadu.csd      # Enable real-time priority
+csound --sched=90 -odac xanadu.csd   # Set specific priority
+```
+
+Requires `-d` (suppress displays) and real-time audio (`-odac` or `-iadc`).
+
+### Sample-accurate timing
+
+```bash
+csound --sample-accurate xanadu.csd
+```
+
+### Daemon mode
+
+```bash
+csound --daemon --port=10000
+```
+
+Runs Csound as a daemon listening on UDP port 10000 for orchestra code and events.
+
+### Inline code
+
+```bash
+csound --code="instr 1
+out vco2(0.5, 440)
+endin" --events="i1 0 1"
+```
+
+### Macros
+
+```bash
+csound --omacro:FREQ=440 xanadu.csd  # Orchestra macro
+csound --smacro:DUR=10 xanadu.csd    # Score macro
+```
+
+### Environment variables
+
+```bash
+csound --env:SFDIR=/path/to/sounds xanadu.csd
+csound --env:SSDIR+=/extra/path xanadu.csd  # Append to path
+```
+
+### Logging
+
+```bash
+csound -O logfile.txt xanadu.csd     # Log messages to file
+csound --logfile=output.log xanadu.csd
+csound -O null xanadu.csd            # Suppress all messages
+```
+
+## Performance modes
+
+### I-time only
+
+```bash
+csound -I xanadu.csd                 # Execute initialization only
+csound --i-only xanadu.csd
+```
+
+### Continuous rewrite
+
+```bash
+csound -R -odac xanadu.csd           # Rewrite WAV/AIFF header while writing
+csound --rewrite -odac xanadu.csd
+```
+
+### Defer GEN01 loads
+
+```bash
+csound -D xanadu.csd                 # Defer soundfile loads until needed
+csound --defer-gen1 xanadu.csd
+```
+
+## Common command combinations
+
+<Steps>
+
+### Output to audio device with low latency
+
+```bash
+csound -odac -b 256 -B 1024 -d xanadu.csd
+```
+
+### Record from microphone with real-time output
+
+```bash
+csound -iadc -odac -b 512 -B 2048 live.csd
+```
+
+### Render high-quality WAV file
+
+```bash
+csound -W -f -r 96000 -o output.wav xanadu.csd
+```
+
+### MIDI input with audio output
+
+```bash
+csound -M0 -odac -b 512 -B 2048 midi.csd
+```
+
+### Silent test run with benchmarks
+
+```bash
+csound -n -m 135 xanadu.csd
+```
+
+</Steps>
+
+## Help and documentation
+
+Get detailed help:
+
+```bash
+csound --help                        # Full command-line help
+csound                               # Short usage summary
+```

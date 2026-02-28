@@ -1,0 +1,743 @@
+---
+title: ctcsound module
+description: Complete API reference for the ctcsound Python module
+---
+
+The `ctcsound` module provides Python bindings to the Csound C API using Python's ctypes library.
+
+## Module initialization
+
+<ResponseField name="csound_initialize" type="function">
+  Initialize the Csound library with specific flags.
+
+  ```python
+  result = ctcsound.csound_initialize(flags)
+  ```
+
+  **Parameters:**
+  - `flags` (int) - Initialization flags:
+    - `CSOUNDINIT_NO_SIGNAL_HANDLER = 1`
+    - `CSOUNDINIT_NO_ATEXIT = 2`
+
+  **Returns:** Zero on success, positive if already initialized, negative on error.
+
+  <Note>
+  This function is called automatically by `Csound()` constructor. You rarely need to call it explicitly.
+  </Note>
+</ResponseField>
+
+## Csound class
+
+The main class for interacting with Csound.
+
+### Constructor
+
+```python
+cs = ctcsound.Csound(host_data=None, opcode_dir=None, pointer_=None)
+```
+
+**Parameters:**
+- `host_data` - Optional data accessible from callbacks
+- `opcode_dir` - Optional override for plugin directory search
+- `pointer_` - Optional existing Csound pointer (advanced use)
+
+### Attributes and properties
+
+<ResponseField name="version" type="method">
+  Get Csound version number.
+
+  ```python
+  version = cs.version()
+  # Returns: 7000 for version 7.0.0
+  ```
+</ResponseField>
+
+<ResponseField name="sr" type="method">
+  Get sample rate (audio frames per second).
+
+  ```python
+  sample_rate = cs.sr()
+  # Returns: float (e.g., 44100.0)
+  ```
+</ResponseField>
+
+<ResponseField name="kr" type="method">
+  Get control rate (control samples per second).
+
+  ```python
+  control_rate = cs.kr()
+  # Returns: float (e.g., 4410.0)
+  ```
+</ResponseField>
+
+<ResponseField name="ksmps" type="method">
+  Get audio vector size in frames (sr/kr).
+
+  ```python
+  vector_size = cs.ksmps()
+  # Returns: int (e.g., 64)
+  ```
+</ResponseField>
+
+<ResponseField name="channels" type="method">
+  Get number of audio channels.
+
+  ```python
+  num_channels = cs.channels(is_input=False)
+  ```
+
+  **Parameters:**
+  - `is_input` (bool) - If `True`, returns `nchnls_i`, otherwise `nchnls`
+</ResponseField>
+
+<ResponseField name="get_0dBFS" type="method">
+  Get 0dBFS level of audio buffers.
+
+  ```python
+  zero_db = cs.get_0dBFS()
+  # Returns: float (typically 1.0)
+  ```
+</ResponseField>
+
+<ResponseField name="A4" type="method">
+  Get A4 frequency reference.
+
+  ```python
+  a4_freq = cs.A4()
+  # Returns: float (typically 440.0)
+  ```
+</ResponseField>
+
+<ResponseField name="current_time_samples" type="method">
+  Get current performance time in sample frames.
+
+  ```python
+  samples = cs.current_time_samples()
+  # Returns: int
+  ```
+</ResponseField>
+
+<ResponseField name="size_of_MYFLT" type="method">
+  Get size of MYFLT type in bytes.
+
+  ```python
+  size = cs.size_of_MYFLT()
+  # Returns: int (typically 8 for double)
+  ```
+</ResponseField>
+
+### Configuration
+
+<ResponseField name="set_option" type="method">
+  Set Csound command-line options.
+
+  ```python
+  result = cs.set_option("-odac")
+  ```
+
+  Must be called before compilation. Multiple options can be in one string.
+
+  **Returns:** Zero on success.
+</ResponseField>
+
+<ResponseField name="params" type="method">
+  Get current parameters into a `CsoundParams` structure.
+
+  ```python
+  params = ctcsound.CsoundParams()
+  cs.params(params)
+  print(params.sr_override)
+  ```
+</ResponseField>
+
+<ResponseField name="set_debug" type="method">
+  Enable or disable debug messages.
+
+  ```python
+  cs.set_debug(True)
+  ```
+</ResponseField>
+
+<ResponseField name="set_message_level" type="method">
+  Set message level (0-231).
+
+  ```python
+  cs.set_message_level(0)  # No messages
+  ```
+</ResponseField>
+
+### Performance
+
+<ResponseField name="compile_" type="method">
+  Compile Csound input files.
+
+  ```python
+  result = cs.compile_("myfile.csd")
+  # Or with multiple arguments:
+  result = cs.compile_("csound", "-odac", "myfile.csd")
+  ```
+
+  **Returns:** Non-zero on error.
+</ResponseField>
+
+<ResponseField name="compile_orc" type="method">
+  Compile orchestra code from a string.
+
+  ```python
+  orc = '''
+  sr = 44100
+  ksmps = 64
+  instr 1
+    out oscili(0.5, 440)
+  endin
+  '''
+  result = cs.compile_orc(orc, async_=False)
+  ```
+
+  **Parameters:**
+  - `orc` (str) - Orchestra code
+  - `async_` (bool) - If `True`, compile asynchronously
+</ResponseField>
+
+<ResponseField name="eval_code" type="method">
+  Evaluate code and return a value.
+
+  ```python
+  code = 'i1 = 2 + 2\nreturn i1'
+  result = cs.eval_code(code)
+  # Returns: 4.0
+  ```
+</ResponseField>
+
+<ResponseField name="compile_csd" type="method">
+  Compile a CSD file or string.
+
+  ```python
+  # From file:
+  cs.compile_csd("myfile.csd", mode=0, async_=False)
+  
+  # From string:
+  csd_text = "<CsoundSynthesizer>...</CsoundSynthesizer>"
+  cs.compile_csd(csd_text, mode=1, async_=False)
+  ```
+
+  **Parameters:**
+  - `csd` (str) - Filename or CSD text
+  - `mode` (int) - 0 for file, 1 for text string
+  - `async_` (bool) - If `True`, compile asynchronously
+</ResponseField>
+
+<ResponseField name="start" type="method">
+  Prepare Csound for performance.
+
+  ```python
+  result = cs.start()
+  ```
+
+  **Returns:** Non-zero on error.
+</ResponseField>
+
+<ResponseField name="perform_ksmps" type="method">
+  Process one control period (ksmps samples).
+
+  ```python
+  while cs.perform_ksmps() == 0:
+      # Process audio...
+      pass
+  ```
+
+  **Returns:** `False` during performance, `True` when finished.
+</ResponseField>
+
+<ResponseField name="reset" type="method">
+  Reset Csound for a new performance.
+
+  ```python
+  cs.reset()
+  ```
+
+  Clears all internal memory and state.
+</ResponseField>
+
+<ResponseField name="run_utility" type="method">
+  Run a Csound utility.
+
+  ```python
+  result = cs.run_utility("sndinfo", ["soundfile.wav"])
+  ```
+
+  Call `reset()` after using utilities.
+</ResponseField>
+
+### Audio I/O
+
+<ResponseField name="spin" type="method">
+  Get audio input buffer as NumPy array.
+
+  ```python
+  import numpy as np
+  
+  input_buffer = cs.spin()
+  # Shape: (ksmps * nchnls_i,)
+  ```
+
+  Write to this buffer before calling `perform_ksmps()`.
+</ResponseField>
+
+<ResponseField name="spout" type="method">
+  Get audio output buffer as NumPy array.
+
+  ```python
+  output_buffer = cs.spout()
+  # Shape: (ksmps * nchnls,)
+  ```
+
+  Read from this buffer after calling `perform_ksmps()`.
+</ResponseField>
+
+<ResponseField name="set_host_audio_IO" type="method">
+  Disable default audio I/O handling.
+
+  ```python
+  cs.set_host_audio_IO()
+  ```
+
+  Use `spin()` and `spout()` buffers directly after calling this.
+</ResponseField>
+
+<ResponseField name="set_RT_audio_module" type="method">
+  Set the real-time audio module.
+
+  ```python
+  cs.set_RT_audio_module("portaudio")
+  ```
+</ResponseField>
+
+### Channels
+
+<ResponseField name="set_control_channel" type="method">
+  Set a control channel value.
+
+  ```python
+  cs.set_control_channel("frequency", 440.0)
+  ```
+</ResponseField>
+
+<ResponseField name="control_channel" type="method">
+  Get a control channel value.
+
+  ```python
+  value, err = cs.control_channel("frequency")
+  if err is None:
+      print(f"Frequency: {value}")
+  ```
+</ResponseField>
+
+<ResponseField name="set_audio_channel" type="method">
+  Set an audio channel from NumPy array.
+
+  ```python
+  import numpy as np
+  
+  samples = np.zeros(cs.ksmps(), dtype=ctcsound.MYFLT)
+  cs.set_audio_channel("audioIn", samples)
+  ```
+</ResponseField>
+
+<ResponseField name="audio_channel" type="method">
+  Get an audio channel into NumPy array.
+
+  ```python
+  samples = np.zeros(cs.ksmps(), dtype=ctcsound.MYFLT)
+  cs.audio_channel("audioOut", samples)
+  ```
+</ResponseField>
+
+<ResponseField name="set_string_channel" type="method">
+  Set a string channel.
+
+  ```python
+  cs.set_string_channel("filename", "sample.wav")
+  ```
+</ResponseField>
+
+<ResponseField name="string_channel" type="method">
+  Get a string channel value.
+
+  ```python
+  filename = cs.string_channel("filename")
+  ```
+</ResponseField>
+
+<ResponseField name="channel_ptr" type="method">
+  Get a pointer to a channel.
+
+  ```python
+  ptr, err = cs.channel_ptr("myChannel", 
+      ctcsound.CSOUND_CONTROL_CHANNEL | ctcsound.CSOUND_INPUT_CHANNEL)
+  
+  if err == "":
+      # Use pointer...
+      pass
+  ```
+
+  Returns a NumPy array for control/audio channels.
+</ResponseField>
+
+<ResponseField name="list_channels" type="method">
+  List all allocated channels.
+
+  ```python
+  channels, err = cs.list_channels()
+  if channels:
+      for i in range(len(channels)):
+          info = channels[i]
+          print(f"{info.name}: {info.type}")
+      cs.delete_channel_list(channels)
+  ```
+</ResponseField>
+
+<ResponseField name="lock_channel" type="method">
+  Lock a channel for thread-safe access.
+
+  ```python
+  cs.lock_channel("myChannel")
+  # Access channel data...
+  cs.unlock_channel("myChannel")
+  ```
+</ResponseField>
+
+### Events
+
+<ResponseField name="event" type="method">
+  Send a score event.
+
+  ```python
+  import numpy as np
+  
+  # Note event: i1 0 1 440
+  params = np.array([1, 0, 1, 440], dtype=ctcsound.MYFLT)
+  cs.event(ctcsound.CS_INSTR_EVENT, params, async_=False)
+  ```
+</ResponseField>
+
+<ResponseField name="event_string" type="method">
+  Send score event(s) as a string.
+
+  ```python
+  cs.event_string("i 1 0 1 440", async_=False)
+  
+  # Multiple events:
+  cs.event_string("i 1 0 1 440\ni 1 1 1 550", async_=False)
+  ```
+</ResponseField>
+
+<ResponseField name="instr_number" type="method">
+  Get instrument number from name.
+
+  ```python
+  num = cs.instr_number("MyInstrument")
+  # Returns: int or -1 if not found
+  ```
+</ResponseField>
+
+### Tables
+
+<ResponseField name="table" type="method">
+  Get function table as NumPy array.
+
+  ```python
+  table_data = cs.table(1)
+  if table_data is not None:
+      print(f"Table 1 length: {len(table_data)}")
+  ```
+</ResponseField>
+
+<ResponseField name="table_length" type="method">
+  Get function table length.
+
+  ```python
+  length = cs.table_length(1)
+  # Returns: -1 if table doesn't exist
+  ```
+</ResponseField>
+
+<ResponseField name="tableArgs" type="method">
+  Get GEN arguments for a table.
+
+  ```python
+  args = cs.tableArgs(1)
+  if args is not None:
+      print(f"GEN number: {args[0]}")
+  ```
+</ResponseField>
+
+### Messages
+
+<ResponseField name="message" type="method">
+  Display an informational message.
+
+  ```python
+  cs.message("Frequency: {}", 440.0)
+  # Or old-style:
+  cs.message("Frequency: %f", 440.0)
+  ```
+</ResponseField>
+
+<ResponseField name="create_message_buffer" type="method">
+  Create a message buffer.
+
+  ```python
+  cs.create_message_buffer(to_stdout=True)
+  
+  # Later, read messages:
+  while cs.message_cnt() > 0:
+      msg = cs.first_message()
+      attr = cs.first_message_attr()
+      print(msg)
+      cs.pop_first_message()
+  
+  cs.destroy_message_buffer()
+  ```
+</ResponseField>
+
+### Device enumeration
+
+<ResponseField name="audio_dev_list" type="method">
+  Get list of audio devices.
+
+  ```python
+  devices = cs.audio_dev_list(is_output=True)
+  for dev in devices:
+      print(f"{dev['device_name']}: {dev['max_nchnls']} channels")
+  ```
+</ResponseField>
+
+<ResponseField name="midi_dev_list" type="method">
+  Get list of MIDI devices.
+
+  ```python
+  devices = cs.midi_dev_list(is_output=False)
+  for dev in devices:
+      print(f"{dev['device_name']} ({dev['midi_module']})")
+  ```
+</ResponseField>
+
+### Score handling
+
+<ResponseField name="score_time" type="method">
+  Get current score time in seconds.
+
+  ```python
+  time = cs.score_time()
+  ```
+</ResponseField>
+
+<ResponseField name="is_score_pending" type="method">
+  Check if score events are being performed.
+
+  ```python
+  pending = cs.is_score_pending()
+  ```
+</ResponseField>
+
+<ResponseField name="set_score_pending" type="method">
+  Enable/disable score event performance.
+
+  ```python
+  cs.set_score_pending(False)  # Mute score
+  ```
+</ResponseField>
+
+<ResponseField name="rewind_score" type="method">
+  Rewind score to beginning.
+
+  ```python
+  cs.rewind_score()
+  ```
+</ResponseField>
+
+## CsoundPerformanceThread class
+
+Runs Csound in a separate thread.
+
+### Constructor
+
+```python
+pt = ctcsound.CsoundPerformanceThread(csound_pointer)
+```
+
+**Parameters:**
+- `csound_pointer` - Pointer from `cs.csound()`
+
+### Methods
+
+<ResponseField name="play" type="method">
+  Start or continue performance.
+
+  ```python
+  pt.play()
+  ```
+</ResponseField>
+
+<ResponseField name="pause" type="method">
+  Pause performance.
+
+  ```python
+  pt.pause()
+  ```
+</ResponseField>
+
+<ResponseField name="toggle_pause" type="method">
+  Toggle pause state.
+
+  ```python
+  pt.toggle_pause()
+  ```
+</ResponseField>
+
+<ResponseField name="stop" type="method">
+  Stop performance (cannot be continued).
+
+  ```python
+  pt.stop()
+  ```
+</ResponseField>
+
+<ResponseField name="is_running" type="method">
+  Check if thread is running.
+
+  ```python
+  if pt.is_running():
+      print("Still playing...")
+  ```
+</ResponseField>
+
+<ResponseField name="status" type="method">
+  Get performance status.
+
+  ```python
+  status = pt.status()
+  # 0 = playing, positive = ended, negative = error
+  ```
+</ResponseField>
+
+<ResponseField name="join" type="method">
+  Wait for performance to finish.
+
+  ```python
+  result = pt.join()
+  # Returns: positive if ended normally, negative on error
+  ```
+</ResponseField>
+
+<ResponseField name="score_event" type="method">
+  Send a score event from the thread.
+
+  ```python
+  import numpy as np
+  
+  pfields = np.array([1, 0, 1, 440], dtype=ctcsound.MYFLT)
+  pt.score_event(absp2mode=0, opcod='i', pFields=pfields)
+  ```
+</ResponseField>
+
+<ResponseField name="input_message" type="method">
+  Send score event string.
+
+  ```python
+  pt.input_message("i 1 0 1 440")
+  ```
+</ResponseField>
+
+<ResponseField name="record" type="method">
+  Start recording output to file.
+
+  ```python
+  pt.record("output.wav", samplebits=16, numbufs=4)
+  ```
+</ResponseField>
+
+<ResponseField name="stop_record" type="method">
+  Stop recording.
+
+  ```python
+  pt.stop_record()
+  ```
+</ResponseField>
+
+## Data structures
+
+### CsoundParams
+
+Configuration parameters structure with fields:
+
+- `debug_mode` (int) - Debug flag
+- `sr_override` (MYFLT) - Sample rate override
+- `kr_override` (MYFLT) - Control rate override  
+- `ksmps_override` (int) - ksmps override
+- `nchnls_override` (int) - Number of channels override
+- `message_level` (int) - Message level (0-231)
+- `number_of_threads` (int) - Thread count for multicore
+- And many more configuration fields...
+
+### ControlChannelHints
+
+Hints for control channel GUI display:
+
+```python
+hints = ctcsound.ControlChannelHints()
+hints.behav = ctcsound.CSOUND_CONTROL_CHANNEL_LIN
+hints.dflt = 440.0
+hints.min = 20.0
+hints.max = 20000.0
+hints.attributes = None
+
+cs.set_control_channel_hints("frequency", hints)
+```
+
+### CsoundAudioDevice
+
+Audio device information:
+
+- `device_name` (str) - Device name
+- `device_id` (str) - Device ID
+- `rt_module` (str) - RT module name
+- `max_nchnls` (int) - Maximum channels
+- `isOutput` (int) - 1 if output device
+
+### CsoundMidiDevice
+
+MIDI device information:
+
+- `device_name` (str) - Device name
+- `interface_name` (str) - Interface name
+- `device_id` (str) - Device ID  
+- `midi_module` (str) - MIDI module name
+- `isOutput` (int) - 1 if output device
+
+## Utility functions
+
+<ResponseField name="cstring" type="function">
+  Convert Python string to C string.
+
+  ```python
+  c_str = ctcsound.cstring("hello")
+  ```
+</ResponseField>
+
+<ResponseField name="pstring" type="function">
+  Convert C string to Python string.
+
+  ```python
+  py_str = ctcsound.pstring(c_str)
+  ```
+</ResponseField>
+
+<ResponseField name="cchar" type="function">
+  Convert Python string to C char.
+
+  ```python
+  c_ch = ctcsound.cchar('i')
+  ```
+</ResponseField>

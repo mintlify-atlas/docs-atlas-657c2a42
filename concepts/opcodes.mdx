@@ -1,0 +1,542 @@
+---
+title: Opcode system
+description: Understanding Csound's opcode architecture, registration, and execution model
+---
+
+Opcodes are the fundamental building blocks of Csound programs. They represent operations that generate, process, or analyze audio and control signals. This document explains how the opcode system works internally.
+
+## What is an opcode?
+
+An opcode is a unit of computation with:
+
+- **Inputs**: Arguments that provide data (constants, variables, audio streams)
+- **Outputs**: Results produced by the opcode
+- **State**: Internal data that persists between calls
+- **Functions**: Code that executes at different rates (init, k-rate, a-rate)
+
+```csound
+aSig  oscil  0.5, 440, 1
+;^^^  ^^^^^  ^^^  ^^^  ^
+;out  name   amp  freq table
+```
+
+## Opcode entry structure
+
+Each opcode is defined by an `OENTRY` structure:
+
+```c title="include/csoundCore.h:90"
+typedef struct oentry {
+    char *opname;              // Opcode name (e.g., "oscil")
+    size_t dsblksiz;           // Data structure size
+    int32_t flags;             // Behavior flags
+    char *outypes;             // Output types (e.g., "a")
+    char *intypes;             // Input types (e.g., "kki")
+    SUBR init;                 // Init-time function
+    SUBR perf;                 // Performance-time function
+    SUBR deinit;               // Cleanup function
+    void *useropinfo;          // User opcode parameters
+    int32_t deprecated;        // Deprecation flag
+} OENTRY;
+```
+
+### Type strings
+
+From `Engine/entry.c:26`, input and output types include:
+
+<Tabs>
+  <Tab title="Basic types">
+    - `i` - i-rate scalar (initialization time)
+    - `k` - k-rate scalar (control rate)
+    - `a` - a-rate vector (audio rate)
+    - `S` - String
+    - `f` - Frequency variable (special k-rate)
+    - `w` - Spectral variable (FFT data)
+  </Tab>
+  
+  <Tab title="Polymorphic">
+    - `x` - k-rate or a-rate
+    - `T` - String or i-rate
+    - `U` - String or i/k-rate
+    - `.` - Any type (required)
+    - `?` - Any type (optional)
+  </Tab>
+  
+  <Tab title="Special codes">
+    - `o` - Optional i-rate, default 0
+    - `p` - Optional i-rate, default 1
+    - `v` - Optional i-rate, default 0.5
+    - `j` - Optional i-rate, default -1
+    - `O` - Optional k-rate, default 0
+    - `m` - Variadic i-rate args
+    - `M` - Variadic any-rate args
+    - `y` - Variadic a-rate args
+    - `z` - Variadic k-rate args
+  </Tab>
+  
+  <Tab title="Arrays">
+    - `k[]` - k-rate array
+    - `a[]` - a-rate array
+    - `i[][]` - 2D i-rate array
+    - `:TypeName;[]` - User-defined type array
+  </Tab>
+</Tabs>
+
+<Note>
+From `Engine/entry.c:73`, array types use external format in OENTRY strings (e.g., `"k[]"`) which is converted to internal format (e.g., `"[k]"`) by `split_args()` at runtime.
+</Note>
+
+## Opcode registration
+
+Opcodes are registered in tables that Csound reads at startup:
+
+```c title="Engine/entry.c:78"
+const OENTRY opcodlst_1[] = {
+    { "",     0, 0, "", "", NULL, NULL, NULL, NULL },
+    { "instr", 0, 0, "", "", NULL, NULL, NULL, NULL },
+    { "endin", 0, 0, "", "", NULL, NULL, NULL, NULL },
+    { "opcode", 0, 0, "", "", NULL, NULL, NULL, NULL },
+    { "endop", 0, 0, "", "", NULL, NULL, NULL, NULL },
+    { "$label", S(LBLBLK), 0, "", "", NULL, NULL, NULL, NULL },
+    { "pset", S(PVSET), 0, "", "m", NULL, NULL, NULL, NULL },
+    // ...
+};
+```
+
+### Opcode database
+
+From `Engine/README.md`, the opcode database is managed by `entry.c`. At initialization:
+
+1. Built-in opcodes are registered from `opcodlst_1[]`
+2. Plugin opcodes are discovered and loaded
+3. Hash tables map names to `OENTRY` structures
+4. Overloaded opcodes stored in `OENTRIES` arrays
+
+```c title="include/csoundCore.h:106"
+typedef struct oentries {
+    int32_t count;           // Number of entries
+    OENTRY* entries[0];      // Extended by count entries
+} OENTRIES;
+```
+
+## Opcode lifecycle
+
+### Compilation phase
+
+When orchestra code is compiled:
+
+1. **Parsing**: Orchestra parser identifies opcode calls
+2. **Lookup**: Compiler finds matching `OENTRY` in database
+3. **Type checking**: Argument types validated against `intypes`/`outypes`
+4. **Code generation**: `TEXT` structure created linking to `OENTRY`
+
+```c title="include/csoundCore.h:116"
+typedef struct text {
+    uint16_t linenum;        // Line number in source
+    uint64_t locn;           // Location
+    OENTRY *oentry;          // Pointer to opcode entry
+    char *opcod;             // Opcode name
+    ARGLST *inlist;          // Input argument names
+    ARGLST *outlist;         // Output argument names
+    ARG *inArgs;             // Input argument info
+    uint32_t inArgCount;
+    ARG *outArgs;            // Output argument info
+    uint32_t outArgCount;
+} TEXT;
+```
+
+From `Engine/csound_orc_compile.c:1`, compilation orchestrates this process.
+
+### Instance creation
+
+When an instrument instance activates:
+
+1. **Memory allocation**: `dsblksiz` bytes allocated for opcode state
+2. **Initialization**: `init` function called once
+3. **Chain linking**: Opcode added to instrument's `nxti` or `nxtp` chain
+
+```c title="Engine/insert.c:26"
+// insert.c manages opcode instantiation
+static int32_t insert(CSOUND *csound, int32_t insno, EVTBLK *newevtp);
+```
+
+### Execution
+
+During performance:
+
+```c
+// Init phase (once)
+if (opcode->init != NULL) {
+    opcode->init(csound, opcode_data);
+}
+
+// Performance phase (every k-period)
+while (instance_active) {
+    // k-rate opcodes called once
+    if (opcode->perf != NULL) {
+        opcode->perf(csound, opcode_data);
+    }
+    
+    // a-rate opcodes process ksmps samples
+    for (n = 0; n < ksmps; n++) {
+        // Sample processing
+    }
+}
+
+// Cleanup (once)
+if (opcode->deinit != NULL) {
+    opcode->deinit(csound, opcode_data);
+}
+```
+
+## Opcode implementation
+
+### Data structure
+
+Every opcode defines a data structure inheriting from `OPDS`:
+
+```c
+typedef struct {
+    OPDS h;                  // Header (required)
+    MYFLT *out;              // Output pointer
+    MYFLT *in1, *in2;        // Input pointers
+    // State variables
+    double phase;
+    AUXCH buffer;
+} MY_OPCODE;
+```
+
+The `OPDS` header provides:
+- Links to next opcode in chain
+- Pointer to parent instrument instance
+- Pointer to opcode's `TEXT` structure
+
+### Init function
+
+The init function runs once when the instance starts:
+
+```c
+int32_t my_opcode_init(CSOUND *csound, MY_OPCODE *p) {
+    // Validate inputs
+    if (*p->in1 <= 0) {
+        return csound->InitError(csound, "Invalid input");
+    }
+    
+    // Allocate auxiliary memory
+    csound->AuxAlloc(csound, size, &p->buffer);
+    
+    // Initialize state
+    p->phase = 0.0;
+    
+    return OK;
+}
+```
+
+### Performance function
+
+The performance function runs every k-period:
+
+```c
+int32_t my_opcode_perf(CSOUND *csound, MY_OPCODE *p) {
+    MYFLT *out = p->out;
+    uint32_t offset = p->h.insdshead->ksmps_offset;
+    uint32_t early = p->h.insdshead->ksmps_no_end;
+    uint32_t n, nsmps = CS_KSMPS;
+    
+    // Handle sample-accurate timing
+    if (offset) memset(out, 0, offset * sizeof(MYFLT));
+    if (early) {
+        nsmps -= early;
+        memset(&out[nsmps], 0, early * sizeof(MYFLT));
+    }
+    
+    // Process audio samples
+    for (n = offset; n < nsmps; n++) {
+        out[n] = process_sample(p);
+    }
+    
+    return OK;
+}
+```
+
+Example from `Opcodes/butter.c:58`.
+
+### Registration
+
+Register the opcode in the entry table:
+
+```c
+{
+    "myopcode",              // Name
+    sizeof(MY_OPCODE),       // Structure size
+    0,                       // Flags
+    "a",                     // Output: audio
+    "kk",                    // Inputs: two k-rate
+    my_opcode_init,          // Init function
+    my_opcode_perf,          // Perf function
+    NULL,                    // No deinit
+    NULL,                    // No user opcode info
+    0                        // Not deprecated
+}
+```
+
+## Opcode categories
+
+### Built-in opcodes (OOps/)
+
+From `OOps/README.md`, internal opcodes include:
+
+<CardGroup cols={2}>
+  <Card title="Signal generators" icon="wave-square">
+    **ugens2.c**, **ugens3.c**, **ugens4.c**, **oscils.c**
+    
+    Oscillators, noise, sample playback, FM synthesis
+  </Card>
+  
+  <Card title="Signal processors" icon="sliders">
+    **ugens5.c**, **ugens6.c**, **vdelay.c**
+    
+    Filters, delays, LPC, reverb
+  </Card>
+  
+  <Card title="Analysis/resynthesis" icon="chart-line">
+    **fftlib.c**, **pvsanal.c**, **pstream.c**
+    
+    FFT, phase vocoder, spectral processing
+  </Card>
+  
+  <Card title="Control/utility" icon="gears">
+    **ugens1.c**, **goto_ops.c**, **schedule.c**
+    
+    Envelopes, control flow, event scheduling
+  </Card>
+</CardGroup>
+
+### Plugin opcodes (Opcodes/)
+
+External opcodes in dynamically loaded libraries:
+
+- **afilters.c**: Advanced filters
+- **biquad.c**: Biquad filters  
+- **buchla.c**: Buchla-style modules
+- **cellular.c**: Cellular automata
+- **compress.c**: Dynamics processors
+- Many more...
+
+Plugins discovered at runtime from configured directories.
+
+## User-defined opcodes (UDOs)
+
+Users can define opcodes in Csound language:
+
+```csound
+opcode Reverb, aa, aak
+    ain, ksize xin
+    
+    a1 comb ain, 0.05, ksize
+    a2 comb ain, 0.03, ksize * 0.8
+    
+    xout a1, a2
+endop
+```
+
+From `Engine/README.md`, UDOs are handled by `udo.c`:
+
+```c title="Engine/udo.c:1"
+// user-defined opcodes and subinstruments
+```
+
+UDO compilation from `Engine/udo.c:34`:
+
+```c
+static int32_t count_args(const char *args) {
+    int32_t count = 0;
+    while (*args != '\0') {
+        if (*args != ':') {
+            if (*args == '[') args += 2;
+            else {
+                args++;
+                count++;
+            }
+        } else {
+            while (*args != ';') {
+                if (*args == '[') args += 2;
+                else args++;
+            }
+            count++;
+            args++;
+        }
+    }
+    return count;
+}
+```
+
+UDOs are:
+1. Parsed as pseudo-instruments
+2. Compiled to internal representation
+3. Registered in opcode database
+4. Called like built-in opcodes
+
+<Tip>
+UDOs can have init-time and perf-time code, just like C opcodes. From `Engine/csound_orc_compile.c:62`, Csound checks if UDOs have perf-time opcodes.
+</Tip>
+
+## Polymorphic opcodes
+
+Opcodes can be overloaded with different type signatures:
+
+```c
+// Same name, different signatures
+{ "sum", /* ... */, "k", "kk", /* k-rate */ },
+{ "sum", /* ... */, "a", "aa", /* a-rate */ },
+{ "sum", /* ... */, "i", "ii", /* i-rate */ },
+```
+
+The compiler selects the correct version based on argument types.
+
+### Type polymorphism
+
+The type system (from `Engine/csound_type_system.c`) enables:
+
+- **Generic types**: Opcodes work with multiple types
+- **Array polymorphism**: Same opcode for scalar and array versions
+- **User-defined types**: Opcodes operating on custom structures
+
+Example from `Engine/entry.c:96`:
+
+```c
+{ "ctrlinit",   S(CTLINIT),   0, "", "im", /* int MIDI */ },
+{ "ctrlinit.S", S(CTLINITS),  0, "", "Sm", /* string names */ },
+```
+
+The `.S` suffix distinguishes the string version.
+
+## Opcode flags
+
+The `flags` field in `OENTRY` controls behavior:
+
+- **Thread safety**: Can opcode run in parallel?
+- **State requirements**: Pure function or stateful?
+- **Output characteristics**: Signal vs. control
+
+## Advanced features
+
+### Auxiliary memory (AUXCH)
+
+For dynamic buffers:
+
+```c title="include/csoundCore.h:194"
+typedef struct auxch {
+    struct auxch *nxtchp;
+    size_t size;
+    void *auxp, *endp;
+} AUXCH;
+```
+
+From `Engine/README.md`, managed by `auxfd.c`:
+
+```c
+// Allocate or resize
+csound->AuxAlloc(csound, nbytes, &p->buffer);
+
+// Use buffer
+MYFLT *data = (MYFLT *)p->buffer.auxp;
+```
+
+Memory persists across k-periods and is freed on instance cleanup.
+
+### File handles (FDCH)
+
+For file I/O:
+
+```c title="include/csoundCore.h:186"
+typedef struct fdch {
+    struct fdch *nxtchp;
+    void *fd;  // Handle from csound->FileOpen()
+} FDCH;
+```
+
+Automatically closed when instance terminates.
+
+### Async operations
+
+For non-blocking operations:
+
+```c title="include/csoundCore.h:210"
+typedef struct {
+    CSOUND *csound;
+    size_t nbytes;
+    AUXCH *auxchp;
+    void *userData;
+    aux_cb notify;  // Callback when complete
+} AUXASYNC;
+```
+
+## Error handling
+
+Opcodes report errors via:
+
+```c
+// Init-time error
+return csound->InitError(csound, "Error message");
+
+// Performance-time error
+return csound->PerfError(csound, &p->h, "Error message");
+
+// Warning
+csound->Warning(csound, "Warning message");
+```
+
+From `include/csound.h:90`, error codes:
+
+```c
+typedef enum {
+    CSOUND_SUCCESS = 0,
+    CSOUND_ERROR = -1,
+    CSOUND_INITIALIZATION = -2,
+    CSOUND_PERFORMANCE = -3,
+    CSOUND_MEMORY = -4,
+    CSOUND_SIGNAL = -5
+} CSOUND_STATUS;
+```
+
+## Performance optimization
+
+### Inline small opcodes
+
+Frequently used opcodes benefit from inlining to avoid function call overhead.
+
+### Cache-friendly data layout
+
+Arrange state variables for sequential access:
+
+```c
+typedef struct {
+    OPDS h;
+    // Hot data (frequently accessed)
+    MYFLT phase;
+    MYFLT increment;
+    // Cold data (rarely accessed)
+    int32_t init_flag;
+} OPTIMIZED_OPCODE;
+```
+
+### SIMD processing
+
+Use vector instructions for parallel sample processing where possible.
+
+## Related topics
+
+<CardGroup cols={2}>
+  <Card title="Architecture" href="/concepts/architecture" icon="sitemap">
+    Overall system design
+  </Card>
+  <Card title="Audio engine" href="/concepts/audio-engine" icon="waveform">
+    Audio processing details
+  </Card>
+  <Card title="Instruments" href="/concepts/instruments" icon="music">
+    How opcodes combine into instruments
+  </Card>
+  <Card title="Plugin development" href="/development" icon="plug">
+    Creating custom opcodes
+  </Card>
+</CardGroup>

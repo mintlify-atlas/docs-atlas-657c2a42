@@ -1,0 +1,801 @@
+---
+title: Python usage examples
+description: Common patterns and real-world examples using the ctcsound module
+---
+
+This page provides practical examples of using Csound with Python.
+
+## Basic examples
+
+### Hello Csound
+
+The simplest possible Csound program:
+
+```python
+import ctcsound
+
+# Create Csound instance
+cs = ctcsound.Csound()
+
+# Define a simple orchestra
+orc = '''
+sr = 44100
+ksmps = 64
+nchnls = 2
+0dbfs = 1
+
+instr 1
+a1 oscili 0.5, 440
+outs a1, a1
+endin
+'''
+
+# Compile orchestra
+cs.compile_orc(orc)
+
+# Start engine
+cs.start()
+
+# Play instrument 1 for 2 seconds
+cs.event_string("i 1 0 2")
+
+# Perform until done
+while cs.perform_ksmps() == 0:
+    pass
+
+# Clean up
+cs.reset()
+```
+
+### CSD file playback
+
+Play a CSD file from disk:
+
+```python
+import ctcsound
+import sys
+
+def play_csd(filename):
+    cs = ctcsound.Csound()
+    
+    # Compile the CSD file
+    result = cs.compile_(filename)
+    if result != 0:
+        print(f"Error compiling {filename}")
+        return result
+    
+    # Start performance
+    result = cs.start()
+    if result != 0:
+        print("Error starting Csound")
+        return result
+    
+    # Perform until complete
+    print(f"Playing {filename}...")
+    while cs.perform_ksmps() == 0:
+        pass
+    
+    print("Finished.")
+    cs.reset()
+    return 0
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python play_csd.py <file.csd>")
+        sys.exit(1)
+    
+    play_csd(sys.argv[1])
+```
+
+### Command-line arguments
+
+Pass command-line options to Csound:
+
+```python
+import ctcsound
+
+cs = ctcsound.Csound()
+
+# Set options before compilation
+cs.set_option("-odac")      # Audio output to DAC
+cs.set_option("-m0")        # No messages
+cs.set_option("-d")         # No displays
+
+# Or compile with arguments
+result = cs.compile_("csound", "-odac", "-m0", "myfile.csd")
+
+cs.start()
+while cs.perform_ksmps() == 0:
+    pass
+
+cs.reset()
+```
+
+## Real-time control
+
+### Control channels
+
+Interactive control of instrument parameters:
+
+```python
+import ctcsound
+import time
+import math
+
+cs = ctcsound.Csound()
+
+orc = '''
+sr = 44100
+ksmps = 64
+nchnls = 2
+0dbfs = 1
+
+instr 1
+kfreq chnget "frequency"
+kamp chnget "amplitude"
+a1 oscili kamp, kfreq
+outs a1, a1
+endin
+'''
+
+cs.compile_orc(orc)
+cs.start()
+
+# Start long note
+cs.event_string("i 1 0 10")
+
+# Modulate frequency over time
+for i in range(100):
+    freq = 440 + 200 * math.sin(i * 0.1)
+    amp = 0.3 + 0.2 * math.sin(i * 0.05)
+    
+    cs.set_control_channel("frequency", freq)
+    cs.set_control_channel("amplitude", amp)
+    
+    cs.perform_ksmps()
+    time.sleep(0.01)
+
+cs.reset()
+```
+
+### Reading control values
+
+Get values back from Csound:
+
+```python
+import ctcsound
+
+cs = ctcsound.Csound()
+
+orc = '''
+sr = 44100
+ksmps = 64
+nchnls = 2
+0dbfs = 1
+
+instr 1
+; Output envelope value
+kenv linseg 0, p3/2, 1, p3/2, 0
+chnset kenv, "envelope"
+a1 oscili kenv * 0.5, 440
+outs a1, a1
+endin
+'''
+
+cs.compile_orc(orc)
+cs.start()
+cs.event_string("i 1 0 2")
+
+while cs.perform_ksmps() == 0:
+    # Read envelope value
+    env, err = cs.control_channel("envelope")
+    if err is None:
+        print(f"Envelope: {env:.3f}", end='\r')
+
+print("\nDone.")
+cs.reset()
+```
+
+## Audio processing
+
+### Process audio buffers
+
+Direct buffer manipulation with NumPy:
+
+```python
+import ctcsound
+import numpy as np
+
+cs = ctcsound.Csound()
+
+# Disable default audio I/O
+cs.set_option("-odac")
+cs.set_option("-iadc")
+
+orc = '''
+sr = 44100
+ksmps = 64
+nchnls = 2
+0dbfs = 1
+
+instr 1
+a1 oscili 0.5, 440
+outs a1, a1
+endin
+'''
+
+cs.compile_orc(orc)
+cs.start()
+cs.event_string("i 1 0 2")
+
+# Get audio buffers
+spout = cs.spout()
+
+# Collect output
+output_frames = []
+
+while cs.perform_ksmps() == 0:
+    # Copy current output buffer
+    frame = spout.copy()
+    output_frames.append(frame)
+
+# Combine all frames
+audio_data = np.concatenate(output_frames)
+
+print(f"Generated {len(audio_data)} samples")
+print(f"Duration: {len(audio_data) / cs.sr() / cs.channels():.2f} seconds")
+
+cs.reset()
+```
+
+### Audio input processing
+
+Feed external audio into Csound:
+
+```python
+import ctcsound
+import numpy as np
+import wave
+
+def process_file_with_csound(input_file, output_file):
+    # Read input file
+    with wave.open(input_file, 'rb') as wf:
+        sr = wf.getframerate()
+        channels = wf.getnchannels()
+        audio_bytes = wf.readframes(wf.getnframes())
+        audio_data = np.frombuffer(audio_bytes, dtype=np.int16)
+        audio_float = audio_data.astype(ctcsound.MYFLT) / 32768.0
+    
+    cs = ctcsound.Csound()
+    cs.set_option(f"-o{output_file}")
+    
+    orc = f'''
+    sr = {sr}
+    ksmps = 64
+    nchnls = {channels}
+    0dbfs = 1
+    
+    instr 1
+    ; Apply reverb to input
+    ain1, ain2 inch 1, 2
+    aL, aR freeverb ain1, ain2, 0.9, 0.5
+    outs aL, aR
+    endin
+    '''
+    
+    cs.compile_orc(orc)
+    cs.start()
+    cs.event_string("i 1 0 -1")  # Infinite duration
+    
+    # Get input buffer
+    spin = cs.spin()
+    ksmps_size = cs.ksmps() * channels
+    
+    # Process in chunks
+    pos = 0
+    while pos < len(audio_float):
+        chunk_size = min(ksmps_size, len(audio_float) - pos)
+        spin[:chunk_size] = audio_float[pos:pos + chunk_size]
+        
+        if cs.perform_ksmps() != 0:
+            break
+        
+        pos += chunk_size
+    
+    cs.reset()
+
+process_file_with_csound("input.wav", "output.wav")
+```
+
+## Performance thread
+
+### Basic threaded performance
+
+Run Csound in a separate thread:
+
+```python
+import ctcsound
+import time
+
+cs = ctcsound.Csound()
+cs.set_option("-odac")
+
+orc = '''
+sr = 44100
+ksmps = 64
+nchnls = 2
+0dbfs = 1
+
+instr 1
+a1 oscili 0.5, p4
+outs a1, a1
+endin
+'''
+
+cs.compile_orc(orc)
+
+# Create performance thread
+pt = ctcsound.CsoundPerformanceThread(cs.csound())
+
+# Start playing
+pt.play()
+
+# Send events while playing
+for freq in [440, 550, 660, 880]:
+    pt.input_message(f"i 1 0 1 {freq}")
+    time.sleep(1)
+
+# Wait for completion
+pt.join()
+```
+
+### Interactive threaded control
+
+Combine threading with real-time control:
+
+```python
+import ctcsound
+import time
+
+cs = ctcsound.Csound()
+cs.set_option("-odac")
+
+orc = '''
+sr = 44100
+ksmps = 64
+nchnls = 2
+0dbfs = 1
+
+instr 1
+kfreq chnget "freq"
+kamp chnget "amp"
+a1 oscili kamp, kfreq
+outs a1, a1
+endin
+'''
+
+cs.compile_orc(orc)
+
+# Set initial values
+cs.set_control_channel("freq", 440.0)
+cs.set_control_channel("amp", 0.5)
+
+# Start performance thread
+pt = ctcsound.CsoundPerformanceThread(cs.csound())
+pt.play()
+pt.input_message("i 1 0 -1")  # Infinite note
+
+# Change parameters while playing
+try:
+    for i in range(50):
+        freq = 440 + i * 10
+        cs.set_control_channel("freq", float(freq))
+        time.sleep(0.1)
+except KeyboardInterrupt:
+    pass
+
+pt.stop()
+pt.join()
+```
+
+## Function tables
+
+### Create and read tables
+
+Work with function tables:
+
+```python
+import ctcsound
+import numpy as np
+import matplotlib.pyplot as plt
+
+cs = ctcsound.Csound()
+
+orc = '''
+sr = 44100
+ksmps = 64
+nchnls = 2
+0dbfs = 1
+
+; Create sine wave table
+giSine ftgen 1, 0, 1024, 10, 1
+
+; Create complex waveform
+giComplex ftgen 2, 0, 1024, 10, 1, 0.5, 0.3, 0.1
+
+instr 1
+endin
+'''
+
+cs.compile_orc(orc)
+cs.start()
+
+# Read table data
+table1 = cs.table(1)
+table2 = cs.table(2)
+
+if table1 is not None:
+    print(f"Table 1 length: {len(table1)}")
+    
+    # Plot tables
+    plt.figure(figsize=(12, 4))
+    
+    plt.subplot(1, 2, 1)
+    plt.plot(table1)
+    plt.title("Table 1: Sine Wave")
+    
+    plt.subplot(1, 2, 2)
+    plt.plot(table2)
+    plt.title("Table 2: Complex Waveform")
+    
+    plt.tight_layout()
+    plt.savefig("tables.png")
+    print("Saved tables.png")
+
+cs.reset()
+```
+
+### Analyze table arguments
+
+Inspect how tables were generated:
+
+```python
+import ctcsound
+
+cs = ctcsound.Csound()
+
+orc = '''
+sr = 44100
+ksmps = 64
+
+giTable ftgen 1, 0, 1024, 10, 1, 0.5, 0.25
+
+instr 1
+endin
+'''
+
+cs.compile_orc(orc)
+cs.start()
+
+# Get table arguments
+args = cs.tableArgs(1)
+
+if args is not None:
+    print(f"GEN number: {int(args[0])}")
+    print(f"Harmonics: {args[1:]}")
+
+cs.reset()
+```
+
+## Advanced patterns
+
+### MIDI-like sequencer
+
+Build a simple step sequencer:
+
+```python
+import ctcsound
+import time
+
+cs = ctcsound.Csound()
+cs.set_option("-odac")
+
+orc = '''
+sr = 44100
+ksmps = 64
+nchnls = 2
+0dbfs = 1
+
+instr 1
+ifreq = p4
+iamp = p5
+aenv expon 1, p3, 0.001
+a1 oscili iamp * aenv, ifreq
+outs a1, a1
+endin
+'''
+
+cs.compile_orc(orc)
+
+# Note sequence (MIDI note numbers)
+sequence = [60, 64, 67, 72, 67, 64, 60, 55]
+
+# Convert MIDI to frequency
+def mtof(midi):
+    return 440 * (2 ** ((midi - 69) / 12))
+
+pt = ctcsound.CsoundPerformanceThread(cs.csound())
+pt.play()
+
+# Play sequence
+tempo = 120  # BPM
+beat_duration = 60.0 / tempo
+
+try:
+    while True:
+        for note in sequence:
+            freq = mtof(note)
+            pt.input_message(f"i 1 0 {beat_duration} {freq} 0.5")
+            time.sleep(beat_duration)
+except KeyboardInterrupt:
+    pass
+
+pt.stop()
+pt.join()
+```
+
+### Dynamic compilation
+
+Add instruments during performance:
+
+```python
+import ctcsound
+import time
+
+cs = ctcsound.Csound()
+cs.set_option("-odac")
+
+# Initial orchestra
+orc = '''
+sr = 44100
+ksmps = 64
+nchnls = 2
+0dbfs = 1
+'''
+
+cs.compile_orc(orc)
+cs.start()
+
+# Start performance thread
+pt = ctcsound.CsoundPerformanceThread(cs.csound())
+pt.play()
+
+# Add instrument 1
+instr1 = '''
+instr 1
+a1 oscili 0.5, 440
+outs a1, a1
+endin
+'''
+cs.compile_orc(instr1)
+pt.input_message("i 1 0 1")
+time.sleep(2)
+
+# Add instrument 2
+instr2 = '''
+instr 2
+a1 oscili 0.5, 550
+outs a1, a1
+endin
+'''
+cs.compile_orc(instr2)
+pt.input_message("i 2 0 1")
+time.sleep(2)
+
+pt.stop()
+pt.join()
+```
+
+### Recording output
+
+Record performance to file:
+
+```python
+import ctcsound
+import time
+
+cs = ctcsound.Csound()
+cs.set_option("-odac")  # Real-time output
+
+orc = '''
+sr = 44100
+ksmps = 64
+nchnls = 2
+0dbfs = 1
+
+instr 1
+kfreq expon 880, p3, 220
+a1 oscili 0.5, kfreq
+outs a1, a1
+endin
+'''
+
+cs.compile_orc(orc)
+
+pt = ctcsound.CsoundPerformanceThread(cs.csound())
+
+# Start recording
+pt.record("output.wav", samplebits=16, numbufs=4)
+print("Recording started...")
+
+pt.play()
+
+# Play some notes
+for i in range(5):
+    pt.input_message(f"i 1 {i} 1")
+
+time.sleep(6)
+
+# Stop recording
+pt.stop_record()
+print("Recording stopped.")
+
+pt.stop()
+pt.join()
+```
+
+### Error handling
+
+Robust error handling:
+
+```python
+import ctcsound
+import sys
+
+def safe_csound_run(csd_file):
+    cs = None
+    try:
+        cs = ctcsound.Csound()
+        
+        # Compile
+        result = cs.compile_(csd_file)
+        if result != ctcsound.CSOUND_SUCCESS:
+            print(f"Compilation failed: {result}")
+            return 1
+        
+        # Start
+        result = cs.start()
+        if result != ctcsound.CSOUND_SUCCESS:
+            print(f"Start failed: {result}")
+            return 1
+        
+        # Perform
+        while True:
+            result = cs.perform_ksmps()
+            if result != 0:
+                if result > 0:
+                    print("Performance completed normally")
+                else:
+                    print(f"Performance error: {result}")
+                break
+        
+        return 0
+        
+    except Exception as e:
+        print(f"Exception: {e}")
+        return 1
+        
+    finally:
+        if cs is not None:
+            cs.reset()
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python script.py <file.csd>")
+        sys.exit(1)
+    
+    sys.exit(safe_csound_run(sys.argv[1]))
+```
+
+## NumPy integration
+
+### Signal analysis
+
+Analyze Csound output with NumPy:
+
+```python
+import ctcsound
+import numpy as np
+
+cs = ctcsound.Csound()
+cs.set_option("-n")  # No audio output
+
+orc = '''
+sr = 44100
+ksmps = 64
+nchnls = 1
+0dbfs = 1
+
+instr 1
+a1 oscili 0.5, 440
+out a1
+endin
+'''
+
+cs.compile_orc(orc)
+cs.start()
+cs.event_string("i 1 0 1")
+
+# Collect one second of audio
+frames_needed = int(cs.sr() / cs.ksmps())
+output_frames = []
+
+for _ in range(frames_needed):
+    if cs.perform_ksmps() != 0:
+        break
+    output_frames.append(cs.spout().copy())
+
+# Combine and analyze
+audio = np.concatenate(output_frames)
+
+print(f"RMS level: {np.sqrt(np.mean(audio**2)):.4f}")
+print(f"Peak level: {np.max(np.abs(audio)):.4f}")
+print(f"Mean: {np.mean(audio):.6f}")
+
+cs.reset()
+```
+
+### Batch processing
+
+Process multiple files efficiently:
+
+```python
+import ctcsound
+import numpy as np
+import os
+
+def apply_csound_effect(input_files, output_dir, effect_orc):
+    """Apply Csound effect to multiple files."""
+    
+    os.makedirs(output_dir, exist_ok=True)
+    
+    for input_file in input_files:
+        basename = os.path.basename(input_file)
+        output_file = os.path.join(output_dir, f"processed_{basename}")
+        
+        cs = ctcsound.Csound()
+        cs.set_option(f"-i{input_file}")
+        cs.set_option(f"-o{output_file}")
+        
+        cs.compile_orc(effect_orc)
+        cs.start()
+        
+        print(f"Processing {basename}...")
+        while cs.perform_ksmps() == 0:
+            pass
+        
+        cs.reset()
+        print(f"Saved to {output_file}")
+
+# Example effect: reverb
+reverb_orc = '''
+sr = 44100
+ksmps = 64
+nchnls = 2
+0dbfs = 1
+
+instr 1
+ain1, ain2 inch 1, 2
+aL, aR freeverb ain1, ain2, 0.8, 0.5
+outs aL, aR
+endin
+
+; Auto-start
+i 1 0 -1
+'''
+
+input_files = ["file1.wav", "file2.wav"]
+apply_csound_effect(input_files, "processed", reverb_orc)
+```
+
+These examples demonstrate the flexibility and power of the ctcsound Python API for both real-time and offline audio processing.

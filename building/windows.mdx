@@ -1,0 +1,259 @@
+---
+title: Windows build instructions
+description: Build Csound from source on Windows
+---
+
+## Prerequisites
+
+You will need:
+
+- **Visual Studio 2022** (or later) - Community edition is sufficient
+- **CMake** - Build system generator
+- **Flex and Bison** - Parser generators
+- **Git** (optional) - For cloning the source repository
+- **InnoSetup** (optional) - For building the installer
+
+See [Build requirements](/building/requirements) for complete details.
+
+## Installing prerequisites
+
+<Note>
+  All commands should be run in Windows PowerShell as an administrator.
+</Note>
+
+### Using Chocolatey (recommended)
+
+The Chocolatey package manager for Windows is the simplest way to install prerequisites:
+
+<Steps>
+  <Step title="Install Chocolatey">
+    Follow instructions at [chocolatey.org](https://chocolatey.org/install)
+  </Step>
+
+  <Step title="Install required packages">
+    ```powershell
+    choco install -y cmake winflexbison3 innosetup git
+    ```
+  </Step>
+</Steps>
+
+### Manual installation
+
+Alternatively, download and install each component:
+
+- Visual Studio 2022: [visualstudio.microsoft.com](https://visualstudio.microsoft.com/)
+- CMake: [cmake.org/download](https://cmake.org/download/)
+- Win flex-bison: [github.com/lexxmark/winflexbison](https://github.com/lexxmark/winflexbison)
+- Git: [git-scm.com/download/win](https://git-scm.com/download/win)
+
+## Building with Visual Studio and vcpkg
+
+This is the recommended method for Windows builds.
+
+<Steps>
+  <Step title="Clone the repository">
+    Download the Csound source with Git:
+
+    ```powershell
+    git clone https://github.com/csound/csound.git
+    cd csound
+    ```
+
+    Or download as a zip file from [github.com/csound/csound](https://github.com/csound/csound).
+  </Step>
+
+  <Step title="Initialize vcpkg">
+    The vcpkg package manager is used to build and manage dependencies (libsndfile, portaudio, portmidi, etc.):
+
+    ```powershell
+    git submodule init
+    git submodule update
+    .\vcpkg\bootstrap-vcpkg.bat
+    ```
+  </Step>
+
+  <Step title="Configure the build">
+    Generate Visual Studio projects:
+
+    ```powershell
+    cmake -B build -S . -DUSE_VCPKG=1 `
+      -DCUSTOM_CMAKE="./platform/windows/Custom-vs.cmake" `
+      -DINSTALL_PYTHON_INTERFACE=OFF
+    ```
+
+    <Note>
+      If you have Python 3 installed and want Python support, remove the `-DINSTALL_PYTHON_INTERFACE=OFF` option.
+    </Note>
+  </Step>
+
+  <Step title="Build Csound">
+    ```powershell
+    cmake --build build --config Release
+    ```
+
+    This will compile Csound and all dependencies. The process may take some time on the first build as vcpkg builds all dependencies.
+  </Step>
+
+  <Step title="Test the build (optional)">
+    Run tests to verify the build:
+
+    ```powershell
+    cmake --build build --target csdtests
+    cmake --build build --target RUN_TESTS --config Release
+    ```
+  </Step>
+</Steps>
+
+The compiled binaries will be in `build\Release\`:
+- `csound.exe` - Command-line interface
+- `csound64.dll` - Main library
+- Various plugin DLLs
+
+## Building the installer
+
+To create the Windows installer package:
+
+<Steps>
+  <Step title="Set up VC redistributable paths">
+    Set environment variables for the MS C/C++ runtime libraries:
+
+    ```powershell
+    $Env:RedistVersion = Get-Content "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\Microsoft.VCRedistVersion.default.txt"
+    $Env:VCREDIST_CRT_DIR = "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Redist\MSVC\${Env:RedistVersion}\x64\Microsoft.VC143.CRT"
+    $Env:VCREDIST_CXXAMP_DIR = "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Redist\MSVC\${Env:RedistVersion}\x64\Microsoft.VC143.CXXAMP"
+    $Env:VCREDIST_OPENMP_DIR = "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Redist\MSVC\${Env:RedistVersion}\x64\Microsoft.VC143.OpenMP"
+    ```
+
+    <Note>
+      The path might need updating depending on your Visual Studio edition (Community, Professional, or Enterprise).
+    </Note>
+  </Step>
+
+  <Step title="Build installer with InnoSetup">
+    ```powershell
+    iscc /o. installer\windows\csound7_x64_github.iss
+    ```
+
+    This creates an installer executable in the root directory.
+  </Step>
+</Steps>
+
+## Building 32-bit version
+
+To build the 32-bit (x86) version:
+
+```powershell
+# Initialize vcpkg (if not already done)
+git submodule init
+git submodule update
+.\vcpkg\bootstrap-vcpkg.bat
+
+# Configure for 32-bit
+cmake -B build32 -S . -A Win32 -DUSE_VCPKG=1 `
+  -DCUSTOM_CMAKE="./platform/windows/Custom-vs-x86.cmake" `
+  -DINSTALL_PYTHON_INTERFACE=OFF
+
+# Build
+cmake --build build32 --config Release
+```
+
+## Cross-compiling with MinGW on Linux
+
+You can cross-compile Csound for Windows on Linux using MinGW:
+
+<Steps>
+  <Step title="Install MinGW toolchain">
+    ```bash
+    sudo apt-get update
+    sudo apt-get install mingw-w64-x86-64-dev gcc-mingw-w64 g++-mingw-w64 mingw-w64-tools
+    ```
+  </Step>
+
+  <Step title="Use POSIX threading">
+    ```bash
+    sudo update-alternatives --set x86_64-w64-mingw32-gcc /usr/bin/x86_64-w64-mingw32-gcc-posix
+    sudo update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix
+    ```
+  </Step>
+
+  <Step title="Bootstrap vcpkg">
+    ```bash
+    git submodule init
+    git submodule update
+    ./vcpkg/bootstrap-vcpkg.sh
+    ```
+  </Step>
+
+  <Step title="Configure and build">
+    ```bash
+    cmake -B build -S . -DBUILD_TESTS=1 -DUSE_VCPKG=1 \
+      -DCUSTOM_CMAKE="./platform/mingw64-linux/Custom.cmake" \
+      -DCMAKE_SYSTEM_NAME=MinGW
+    cmake --build build --config Release
+    ```
+  </Step>
+</Steps>
+
+## Customizing the build
+
+You can customize the build by modifying `platform\windows\Custom-vs.cmake`. Common customizations:
+
+### Enable/disable features
+
+```cmake
+set(USE_MP3 ON)           # Enable MP3 support
+set(BUILD_PLUGINS ON)     # Build all opcodes as plugins
+set(USE_DOUBLE ON)        # Use double precision
+```
+
+### Change install location
+
+```powershell
+cmake -B build -DCMAKE_INSTALL_PREFIX="C:\Custom\Path" ...
+```
+
+For more options, see [Build requirements](/building/requirements#useful-cmake-options).
+
+## Troubleshooting
+
+### vcpkg build failures
+
+If vcpkg fails to build dependencies:
+
+1. Delete the `vcpkg\buildtrees` folder
+2. Run `bootstrap-vcpkg.bat` again
+3. Retry the build
+
+### Flex/Bison not found
+
+Ensure winflexbison3 is in your PATH:
+
+```powershell
+$env:Path += ";C:\ProgramData\chocolatey\bin"
+```
+
+### Visual Studio version mismatch
+
+If you have multiple Visual Studio versions installed, specify the generator:
+
+```powershell
+cmake -B build -G "Visual Studio 17 2022" -S . ...
+```
+
+### Python interface not building
+
+Ensure Python 3 is installed and in PATH:
+
+```powershell
+python --version
+```
+
+Then remove `-DINSTALL_PYTHON_INTERFACE=OFF` from the CMake command.
+
+### Missing DLLs at runtime
+
+If Csound.exe complains about missing DLLs, ensure all dependency DLLs from `build\Release\` are in the same directory as the executable or in your PATH.
+
+### InnoSetup errors
+
+Verify the VC redistributable paths are correct for your Visual Studio installation. The paths differ between Community, Professional, and Enterprise editions.

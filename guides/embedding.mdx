@@ -1,0 +1,405 @@
+---
+title: Embedding Csound in applications
+description: Integrating Csound into your own applications
+---
+
+Csound can be embedded into host applications through its API. This allows you to create custom front-ends, integrate Csound into games, multimedia applications, or other software.
+
+## C/C++ API
+
+The Csound C API provides the core interface for embedding. All other language bindings are built on top of this.
+
+### Basic workflow
+
+<Steps>
+
+### Include the header
+
+```c
+#include <csound/csound.h>
+```
+
+### Create a Csound instance
+
+```c
+CSOUND *csound = csoundCreate(NULL, NULL);
+```
+
+The first parameter is optional host data (a pointer accessible in callbacks). The second parameter optionally overrides the opcode directory.
+
+### Compile Csound code
+
+```c
+const char *argv[] = {"csound", "myfile.csd"};
+int result = csoundCompile(csound, 2, argv);
+```
+
+Or compile from strings:
+
+```c
+csoundCompileOrc(csound, "instr 1\nout vco2(0.5, 440)\nendin");
+csoundReadScore(csound, "i1 0 1");
+```
+
+### Start performance
+
+```c
+result = csoundStart(csound);
+```
+
+### Perform audio
+
+```c
+while (csoundPerformKsmps(csound) == 0);
+```
+
+This performs one control period (ksmps samples) per iteration.
+
+### Destroy the instance
+
+```c
+csoundDestroy(csound);
+```
+
+</Steps>
+
+### Complete example
+
+Here's a minimal C program that outputs audio to the default device:
+
+```c
+#include <csound/csound.h>
+
+int main(int argc, const char *argv[]) {
+    CSOUND *csound = csoundCreate(NULL, NULL);
+    
+    // Set options
+    csoundSetOption(csound, "-odac");
+    
+    // Compile from command-line arguments
+    int result = csoundCompile(csound, argc, argv);
+    
+    if (result == 0) {
+        result = csoundStart(csound);
+        
+        // Perform until done
+        while (result == 0) {
+            result = csoundPerformKsmps(csound);
+        }
+    }
+    
+    csoundDestroy(csound);
+    return result;
+}
+```
+
+### Setting options
+
+Set Csound options before compilation:
+
+```c
+csoundSetOption(csound, "-odac");           // Audio output
+csoundSetOption(csound, "-m0");             // Message level
+csoundSetOption(csound, "-b512 -B2048");    // Buffer sizes
+csoundSetOption(csound, "--sample-rate=48000");
+```
+
+### Audio I/O callbacks
+
+For custom audio I/O, implement callbacks:
+
+```c
+static void audio_out(CSOUND *csound, const MYFLT *s, int nbytes) {
+    int nsmps = nbytes / sizeof(MYFLT);
+    for (int n = 0; n < nsmps; n++) {
+        fprintf(stdout, "%f\n", s[n]);
+    }
+}
+
+static int audio_in(CSOUND *csound, MYFLT *s, int nbytes) {
+    int nsmps = nbytes / sizeof(MYFLT);
+    int cnt = 0;
+    MYFLT data;
+    
+    while (scanf("%f", &data) > 0 && cnt < nsmps) {
+        s[cnt++] = data;
+    }
+    
+    return cnt / sizeof(MYFLT);
+}
+
+// Set callbacks
+csound->SetRtplayCallback(csound, audio_out);
+csound->SetRtrecordCallback(csound, audio_in);
+```
+
+### MIDI callbacks
+
+Custom MIDI input:
+
+```c
+static int midi_open(CSOUND *csound, void **userData, const char *devName) {
+    // Initialize MIDI device
+    return OK;
+}
+
+static int midi_read(CSOUND *csound, void *userData, 
+                     unsigned char *buf, int nBytes) {
+    int cnt = 0;
+    // Read MIDI data into buf
+    return cnt;  // Return number of bytes read
+}
+
+static int midi_close(CSOUND *csound, void *userData) {
+    // Clean up
+    return OK;
+}
+
+// Set callbacks
+csoundSetExternalMidiInOpenCallback(csound, midi_open);
+csoundSetExternalMidiReadCallback(csound, midi_read);
+csoundSetExternalMidiInCloseCallback(csound, midi_close);
+csoundSetHostMIDIIO(csound);
+```
+
+### Channel communication
+
+Communicate with Csound instruments through channels:
+
+```c
+// Set control channel value
+csoundSetControlChannel(csound, "volume", 0.8);
+
+// Get control channel value
+MYFLT value;
+csoundGetControlChannel(csound, "pitch", &value);
+
+// Set string channel
+csoundSetStringChannel(csound, "filename", "/path/to/file.wav");
+
+// Get audio output channel
+int size;
+MYFLT *audioOut = csoundGetAudioChannel(csound, "audioOut", &size);
+```
+
+In your Csound code:
+
+```csound
+instr 1
+    kvolume chnget "volume"
+    kpitch chnget "pitch"
+    Sfile chnget "filename"
+    
+    asig oscili kvolume, kpitch
+    out asig
+    
+    chnset asig, "audioOut"
+endin
+```
+
+### Score events
+
+Send score events in real-time:
+
+```c
+// Send event string
+csoundInputMessage(csound, "i 1 0 2 440");
+
+// Send multiple events
+csoundReadScore(csound, "i 1 0 1 440\ni 1 + . 550\ni 1 + . 660");
+```
+
+## Python binding
+
+The Python `ctcsound` module provides a Pythonic interface:
+
+```python
+import ctcsound
+
+# Create Csound instance
+cs = ctcsound.Csound()
+
+# Set options
+cs.setOption("-odac")
+cs.setOption("-m0")
+
+# Compile from string
+orc = '''
+instr 1
+    out vco2(0.5, p4)
+endin
+'''
+
+cs.compileOrc(orc)
+cs.readScore("i1 0 1 440")
+
+# Start and perform
+cs.start()
+while cs.performKsmps() == 0:
+    pass
+
+# Clean up
+cs.cleanup()
+cs.reset()
+```
+
+### Using channels in Python
+
+```python
+import ctcsound
+import time
+
+cs = ctcsound.Csound()
+cs.setOption("-odac")
+
+orc = '''
+instr 1
+    kfreq chnget "frequency"
+    kamp chnget "amplitude"
+    out vco2(kamp, kfreq)
+endin
+'''
+
+cs.compileOrc(orc)
+cs.readScore("i1 0 100")
+cs.start()
+
+# Perform in a thread while controlling parameters
+pt = ctcsound.CsoundPerformanceThread(cs.csound())
+pt.play()
+
+# Control in real-time
+for i in range(100):
+    freq = 440 + i * 5
+    cs.setControlChannel("frequency", freq)
+    cs.setControlChannel("amplitude", 0.3)
+    time.sleep(0.05)
+
+pt.stop()
+pt.join()
+cs.cleanup()
+cs.reset()
+```
+
+## Java binding
+
+Java applications can use the Csound Java wrapper:
+
+```java
+import csnd6.*;
+
+public class CsoundExample {
+    public static void main(String[] args) {
+        // Create Csound instance
+        Csound csound = new Csound();
+        
+        // Set options
+        csound.SetOption("-odac");
+        csound.SetOption("-m0");
+        
+        // Compile orchestra
+        String orc = "instr 1\n" +
+                     "out vco2(0.5, 440)\n" +
+                     "endin";
+        csound.CompileOrc(orc);
+        
+        // Read score
+        csound.ReadScore("i1 0 2");
+        
+        // Start and perform
+        csound.Start();
+        while (csound.PerformKsmps() == 0);
+        
+        // Cleanup
+        csound.Stop();
+    }
+}
+```
+
+## Common integration patterns
+
+### Threaded performance
+
+For responsive applications, run Csound in a separate thread:
+
+```c
+#include <pthread.h>
+#include <csound/csound.h>
+
+void *csound_thread(void *data) {
+    CSOUND *csound = (CSOUND *)data;
+    while (csoundPerformKsmps(csound) == 0);
+    return NULL;
+}
+
+int main() {
+    CSOUND *csound = csoundCreate(NULL, NULL);
+    csoundSetOption(csound, "-odac");
+    csoundCompile(csound, 2, (const char *[]){"csound", "file.csd"});
+    csoundStart(csound);
+    
+    pthread_t thread;
+    pthread_create(&thread, NULL, csound_thread, csound);
+    
+    // Main thread can now do other work
+    // Send events, update channels, etc.
+    
+    pthread_join(thread, NULL);
+    csoundDestroy(csound);
+    return 0;
+}
+```
+
+### Processing audio buffers
+
+For DAW plugins or audio processing:
+
+```c
+void process_block(float *input, float *output, int nframes) {
+    MYFLT *spin = csoundGetSpin(csound);
+    MYFLT *spout = csoundGetSpout(csound);
+    int ksmps = csoundGetKsmps(csound);
+    
+    for (int i = 0; i < nframes; i++) {
+        if (i % ksmps == 0) {
+            // Copy input
+            for (int k = 0; k < ksmps; k++) {
+                spin[k] = input[i + k];
+            }
+            
+            // Perform one k-period
+            csoundPerformKsmps(csound);
+            
+            // Copy output
+            for (int k = 0; k < ksmps; k++) {
+                output[i + k] = spout[k];
+            }
+        }
+    }
+}
+```
+
+## Building and linking
+
+### Compile flags
+
+```bash
+gcc -o myapp myapp.c -lcsound64 -I/usr/include/csound
+```
+
+### CMake
+
+```cmake
+find_library(CSOUND_LIB csound64)
+find_path(CSOUND_INCLUDE csound/csound.h)
+
+add_executable(myapp myapp.c)
+target_include_directories(myapp PRIVATE ${CSOUND_INCLUDE})
+target_link_libraries(myapp ${CSOUND_LIB})
+```
+
+### pkg-config
+
+```bash
+gcc -o myapp myapp.c $(pkg-config --cflags --libs csound64)
+```

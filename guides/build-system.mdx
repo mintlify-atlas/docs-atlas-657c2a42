@@ -1,0 +1,437 @@
+---
+title: Build system
+description: CMake build system configuration and options for Csound
+---
+
+## Overview
+
+Csound uses CMake as its build system, supporting multiple platforms and configurations. The build system handles dependencies, platform-specific settings, and various build options.
+
+### CMake versions
+
+- **Minimum version**: 3.13.4
+- **macOS/Apple**: 3.28 or higher required
+- **Recommended**: Latest stable CMake version
+
+## Quick start
+
+### Basic build (Unix-like systems)
+
+```bash
+mkdir build
+cd build
+cmake ..
+make -j8
+sudo make install
+```
+
+### Basic build (Windows PowerShell)
+
+```powershell
+cmake -B build -S . -DUSE_VCPKG=1
+cmake --build build --config Release
+```
+
+## CMake options
+
+### Core options
+
+#### CMAKE_INSTALL_PREFIX
+
+Sets the installation directory (default: `/usr/local`):
+
+```bash
+cmake -DCMAKE_INSTALL_PREFIX=/usr/local ..
+```
+
+#### CMAKE_BUILD_TYPE
+
+Sets build configuration:
+
+- `Release` - Optimized build (default for release)
+- `Debug` - Debug symbols, no optimization
+- `RelWithDebInfo` - Optimized with debug info
+- `MinSizeRel` - Size-optimized build
+
+```bash
+cmake -DCMAKE_BUILD_TYPE=Release ..
+```
+
+### Csound-specific options
+
+#### USE_DOUBLE
+
+Build with double-precision floating point (default: `ON`):
+
+```bash
+cmake -DUSE_DOUBLE=1 ..
+```
+
+- `ON`: 64-bit audio samples (library named `csound64` or `CsoundLib64`)
+- `OFF`: 32-bit audio samples (library named `csound` or `CsoundLib`)
+
+#### USE_LIBSNDFILE
+
+Enable libsndfile for audio file I/O (default: `ON`):
+
+```bash
+cmake -DUSE_LIBSNDFILE=1 ..
+```
+
+Disable if libsndfile is not available:
+
+```bash
+cmake -DUSE_LIBSNDFILE=0 ..
+```
+
+#### USE_LIBSAMPLERATE
+
+Enable libsamplerate for high-quality sample rate conversion (default: `ON`):
+
+```bash
+cmake -DUSE_LIBSAMPLERATE=1 ..
+```
+
+#### BUILD_PLUGINS
+
+Build external opcodes as plugin libraries (default: `OFF`):
+
+```bash
+cmake -DBUILD_PLUGINS=1 ..
+```
+
+#### BUILD_STATIC_LIBRARY
+
+Build a static version of the Csound library (default: `OFF`):
+
+```bash
+cmake -DBUILD_STATIC_LIBRARY=1 ..
+```
+
+#### BUILD_TESTS
+
+Enable building of test suites (default: `OFF`):
+
+```bash
+cmake -DBUILD_TESTS=1 ..
+```
+
+#### BUILD_MULTI_CORE
+
+Enable multicore parallel processing support (default: `ON`):
+
+```bash
+cmake -DBUILD_MULTI_CORE=1 ..
+```
+
+#### USE_COMPILER_OPTIMIZATIONS
+
+Use Csound's default compiler optimization flags (default: `ON`):
+
+```bash
+cmake -DUSE_COMPILER_OPTIMIZATIONS=1 ..
+```
+
+#### USE_VCPKG
+
+Use vcpkg for dependency management (default: `OFF`):
+
+```bash
+cmake -DUSE_VCPKG=1 ..
+```
+
+### Custom configuration
+
+#### CUSTOM_CMAKE
+
+Specify a custom CMake configuration file:
+
+```bash
+cmake -DCUSTOM_CMAKE=./platform/osx/custom-osx.cmake ..
+```
+
+This allows platform-specific or project-specific configurations to override defaults.
+
+### Advanced options
+
+#### USE_GIT_COMMIT
+
+Show git commit hash in version information (default: `ON`):
+
+```bash
+cmake -DUSE_GIT_COMMIT=1 ..
+```
+
+#### CSOUND_GIT_HASH
+
+Override git hash for reproducible builds:
+
+```bash
+cmake -DCSOUND_GIT_HASH="abc123def456" ..
+```
+
+#### CSOUND_BUILD_DATE
+
+Override build date for reproducible builds:
+
+```bash
+cmake -DCSOUND_BUILD_DATE="2026-02-28" ..
+```
+
+#### BUILD_WITH_LTO
+
+Enable link-time optimizations (default: `OFF`):
+
+```bash
+cmake -DBUILD_WITH_LTO=1 ..
+```
+
+#### USE_ASA
+
+Use address sanitizer in Debug builds on macOS (default: `ON`):
+
+```bash
+cmake -DUSE_ASA=1 -DCMAKE_BUILD_TYPE=Debug ..
+```
+
+## Platform-specific builds
+
+### macOS
+
+#### With dependencies installed
+
+```bash
+mkdir build && cd build
+cmake ..
+make -j8
+sudo make install
+```
+
+Framework is installed to `$HOME/Library/Frameworks`.
+
+#### Vanilla (no dependencies)
+
+```bash
+git clone https://github.com/libsndfile/libsndfile
+cd libsndfile
+cmake -B build -DENABLE_EXTERNAL_LIBS=0 -DENABLE_MPEG=0 \
+  -DCMAKE_INSTALL_PREFIX=../sndfile_install
+cmake --build build
+cmake --build build --target install
+cd ..
+
+cmake -B build \
+  -DCMAKE_PREFIX_PATH="$PWD/sndfile_install" \
+  -DCMAKE_INSTALL_PREFIX="$PWD/csound_install" \
+  -DCS_FRAMEWORK_DEST="$PWD/csound_install"
+cmake --build build --config Release
+cmake --build build --target install
+```
+
+#### Using Homebrew
+
+```bash
+brew install --only-dependencies csound
+brew install bison flex jack googletest
+cmake -B build -DCUSTOM_CMAKE="./platform/osx/custom-osx.cmake"
+cmake --build build --config Release
+sudo make install
+```
+
+### Linux (Ubuntu)
+
+```bash
+sudo apt-get update
+sudo apt-get install cmake libsndfile1-dev libasound2-dev \
+  libjack-dev portaudio19-dev libportmidi-dev libpulse-dev \
+  swig liblua5.1-0-dev default-jdk libfltk1.1-dev \
+  libfluidsynth-dev liblo-dev fluid ladspa-sdk libpng-dev \
+  dssi-dev libstk0-dev libgmm++-dev bison flex \
+  libportsmf-dev libeigen3-dev libcunit1-dev gettext \
+  libsamplerate0-dev
+
+mkdir build && cd build
+cmake ..
+make -j8
+sudo make install
+```
+
+### Windows (Visual Studio / vcpkg)
+
+#### Prerequisites
+
+Install Chocolatey packages:
+
+```powershell
+choco install -y cmake winflexbison3 innosetup git
+```
+
+#### Clone and build
+
+```powershell
+git clone https://github.com/csound/csound.git
+cd csound
+git submodule init
+git submodule update
+.\vcpkg\bootstrap-vcpkg.bat
+
+cmake -B build -S . -DUSE_VCPKG=1 \
+  -DCUSTOM_CMAKE="./platform/windows/Custom-vs.cmake" \
+  -DINSTALL_PYTHON_INTERFACE=OFF
+cmake --build build --config Release
+```
+
+#### Build installer
+
+```powershell
+$Env:RedistVersion = Get-Content "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\Microsoft.VCRedistVersion.default.txt"
+$Env:VCREDIST_CRT_DIR = "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Redist\MSVC\${Env:RedistVersion}\x64\Microsoft.VC143.CRT"
+$Env:VCREDIST_CXXAMP_DIR = "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Redist\MSVC\${Env:RedistVersion}\x64\Microsoft.VC143.CXXAMP"
+$Env:VCREDIST_OPENMP_DIR = "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Redist\MSVC\${Env:RedistVersion}\x64\Microsoft.VC143.OpenMP"
+iscc /o. installer\windows\csound7_x64_github.iss
+```
+
+### iOS
+
+```bash
+cd iOS
+chmod +x build_libsndfile.sh
+./build_libsndfile.sh
+./build.sh
+./release.sh
+```
+
+The release script creates a zip file with the iOS build.
+
+## Listing all options
+
+To see all available CMake options:
+
+```bash
+cd build
+cmake -LAH
+```
+
+This displays all cache variables with their help strings and current values.
+
+## Build targets
+
+### Default target
+
+Builds Csound library and executables:
+
+```bash
+make
+```
+
+### Install target
+
+Installs Csound to the configured prefix:
+
+```bash
+sudo make install
+```
+
+### Test targets
+
+Run unit tests:
+
+```bash
+make test
+```
+
+Run integration tests:
+
+```bash
+make csdtests
+```
+
+See the [Testing guide](/guides/testing) for more details.
+
+### Clean target
+
+Remove build artifacts:
+
+```bash
+make clean
+```
+
+## Troubleshooting
+
+### Bison/Flex not found
+
+On macOS, ensure Homebrew versions are used:
+
+```bash
+brew install bison flex
+# CMake will automatically detect Homebrew installations
+```
+
+### Dependency not found
+
+Enable vcpkg for automatic dependency management:
+
+```bash
+cmake -DUSE_VCPKG=1 ..
+```
+
+### CMake cache issues
+
+Delete the build directory and reconfigure:
+
+```bash
+rm -rf build
+mkdir build && cd build
+cmake ..
+```
+
+### Parallel build failures
+
+Reduce parallel jobs:
+
+```bash
+make -j2  # Instead of -j8
+```
+
+## Dependencies
+
+### Required
+
+- **C compiler**: GCC, Clang, or MSVC
+- **Bison** (3.8+): Parser generator
+- **Flex** (2.6+): Lexical analyzer generator
+
+### Optional
+
+- **libsndfile**: Audio file I/O (highly recommended)
+- **libsamplerate**: High-quality sample rate conversion
+- **PortAudio**: Cross-platform audio I/O
+- **PortMIDI**: MIDI I/O
+- **JACK**: Professional audio server
+- **PulseAudio**: Linux audio server
+- **liblo**: OSC (Open Sound Control) support
+- **FLTK**: GUI widgets
+- **Lua**: Lua opcodes
+- **Python**: Python interface
+- **Java**: Java interface
+- **GoogleTest**: Unit testing framework
+
+## vcpkg integration
+
+vcpkg provides automatic dependency management. When `USE_VCPKG=1` is set, CMake configures vcpkg triplets based on the target platform:
+
+- **Linux**: `x64-linux`
+- **macOS**: `x64-osx` or `arm64-osx` (auto-detected)
+- **Windows**: `x64-windows-static` or `x86-windows-static`
+- **Android**: `arm-android`, `arm64-android`, `x86-android`, `x64-android`
+- **iOS**: `arm64-ios`, `x64-ios`
+- **WebAssembly**: `wasm32-emscripten`
+- **MinGW**: `x64-mingw-static` or `x86-mingw-static`
+
+vcpkg is included as a submodule and must be initialized:
+
+```bash
+git submodule init
+git submodule update
+./vcpkg/bootstrap-vcpkg.sh  # or .bat on Windows
+```

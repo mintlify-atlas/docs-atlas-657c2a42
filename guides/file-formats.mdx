@@ -1,0 +1,548 @@
+---
+title: CSD and other file formats
+description: Understanding Csound file formats and structure
+---
+
+Csound uses several file formats for organizing code, scores, and data. The most common is the unified CSD (Csound Structured Data) format, which combines orchestra, score, and options in a single XML-structured file.
+
+## CSD file format
+
+A CSD file is an XML document containing three main sections:
+
+```xml
+<CsoundSynthesizer>
+<CsOptions>
+  <!-- Command-line options -->
+</CsOptions>
+<CsInstruments>
+  <!-- Orchestra code -->
+</CsInstruments>
+<CsScore>
+  <!-- Score events -->
+</CsScore>
+</CsoundSynthesizer>
+```
+
+### Complete CSD example
+
+```xml
+<CsoundSynthesizer>
+<CsOptions>
+-odac -d
+</CsOptions>
+<CsInstruments>
+sr = 44100
+ksmps = 32
+nchnls = 2
+0dbfs = 1
+
+instr 1
+    icps = p4
+    iamp = p5
+    asig vco2 iamp, icps
+    aenv linsegr 0, 0.01, 1, 0.1, 0
+    outs asig * aenv, asig * aenv
+endin
+
+</CsInstruments>
+<CsScore>
+f 1 0 16384 10 1  ; Sine wave
+
+i 1 0 1 440 0.5
+i 1 + . 550 .
+i 1 + . 660 .
+
+e
+</CsScore>
+</CsoundSynthesizer>
+```
+
+### CsOptions section
+
+Contains command-line flags:
+
+```xml
+<CsOptions>
+-odac -b512 -B2048 -m0 -d
+</CsOptions>
+```
+
+Multiple lines are allowed:
+
+```xml
+<CsOptions>
+-odac
+-b512 -B2048
+-m0
+--midi-key=4
+--midi-velocity-amp=5
+</CsOptions>
+```
+
+Leave empty to use command-line arguments:
+
+```xml
+<CsOptions>
+</CsOptions>
+```
+
+### CsInstruments section
+
+Contains the orchestra code:
+
+```xml
+<CsInstruments>
+sr = 48000
+ksmps = 32
+nchnls = 2
+0dbfs = 1
+
+ginstr 1
+    ; Instrument code
+endin
+
+</CsInstruments>
+```
+
+### CsScore section
+
+Contains score statements:
+
+```xml
+<CsScore>
+; Function tables
+f 1 0 16384 10 1
+
+; Instrument events
+i 1 0 2 440 0.5
+i 1 2 2 550 0.4
+
+; End of score
+e
+</CsScore>
+```
+
+For real-time performance with no score events:
+
+```xml
+<CsScore>
+f 0 3600  ; Run for 1 hour
+</CsScore>
+```
+
+Or empty for indefinite runtime:
+
+```xml
+<CsScore>
+</CsScore>
+```
+
+## Separate orchestra and score files
+
+Csound can use separate `.orc` (orchestra) and `.sco` (score) files.
+
+### Orchestra file (.orc)
+
+`test.orc`:
+
+```csound
+sr = 44100
+ksmps = 32
+nchnls = 2
+0dbfs = 1
+
+instr 1
+    asig vco2 0.5, p4
+    out asig, asig
+endin
+```
+
+### Score file (.sco)
+
+`test.sco`:
+
+```csound
+f 1 0 16384 10 1
+
+i 1 0 1 440
+i 1 1 1 550
+i 1 2 1 660
+
+e
+```
+
+### Running separate files
+
+```bash
+csound -odac test.orc test.sco
+```
+
+Or specify orchestra only (no score):
+
+```bash
+csound -odac test.orc
+csound -odac --orc test.orc
+```
+
+## Score file format
+
+The score contains function table definitions and instrument events.
+
+### Function tables
+
+Generate function tables with f-statements:
+
+```csound
+; f table time size gen params...
+f 1 0 16384 10 1                    ; Sine wave
+f 2 0 16384 10 1 0.5 0.3 0.25       ; Sawtooth approximation
+f 3 0 8192 7 0 4096 1 4096 0        ; Triangle
+f 4 0 1024 -17 0 100 0.3 400 1      ; Exponential segments
+```
+
+Parameters:
+- `1` = table number
+- `0` = start time (usually 0)
+- `16384` = table size (power of 2 or power-of-2 + 1)
+- `10` = GEN routine number
+- Remaining values = GEN-specific parameters
+
+### Instrument events (i-statements)
+
+```csound
+; i instr start dur p4 p5 p6...
+i 1 0 2 440 0.5
+i 1 2 1 550 0.3
+i 1 + . 660 .     ; + = previous start + dur, . = carry previous value
+```
+
+Parameters:
+- `1` = instrument number
+- `0` = start time
+- `2` = duration
+- `440` = p4 (user-defined)
+- `0.5` = p5 (user-defined)
+
+### Score preprocessing
+
+#### Carry (`.`)
+
+```csound
+i 1 0 1 440 0.5
+i 1 1 . 550 .     ; dur=1, p5=0.5 (carried from previous)
+```
+
+#### Next-previous (`+`)
+
+```csound
+i 1 0 2 440
+i 1 + 1 550        ; start = 0 + 2 = 2
+i 1 + 1 660        ; start = 2 + 1 = 3
+```
+
+#### Ramping (`>`)
+
+```csound
+i 1 0 1 440 > 880  ; Linear ramp for multiple events
+i 1 + 1
+i 1 + 1
+i 1 + 1            ; Last event gets 880
+```
+
+#### Random (`~`)
+
+```csound
+i 1 0 1 ~ ~        ; Random between 0 and 1
+i 1 + 1 100 ~ 200  ; Random between 100 and 200
+```
+
+#### Macros
+
+```csound
+#define FREQ #440#
+#define DUR #2#
+
+i 1 0 $DUR $FREQ
+```
+
+With parameters:
+
+```csound
+#define NOTE(i t d f) #i $i $t $d $f#
+$NOTE(1 0 1 440)
+$NOTE(1 1 1 550)
+```
+
+#### Loops and conditionals
+
+```csound
+#define BAR #2#
+#define FOO #[$BAR + 1]#
+
+{ 3 $FOO
+i 1 0 0.1 440
+i 2 0 0.1 220
+}
+```
+
+Generates 3 repetitions with calculated values.
+
+### Tempo and sections
+
+#### Tempo (t-statement)
+
+```csound
+t 0 120         ; Set tempo to 120 BPM
+```
+
+With tempo changes:
+
+```csound
+t 0 120 10 140  ; Start at 120, ramp to 140 at beat 10
+```
+
+#### Sections (s-statement)
+
+```csound
+s
+```
+
+Advances time to the next section boundary.
+
+#### End (e-statement)
+
+```csound
+e
+```
+
+Marks the end of the score.
+
+## Real-world CSD examples
+
+### Simple synthesis
+
+```xml
+<CsoundSynthesizer>
+<CsOptions>
+-odac
+</CsOptions>
+<CsInstruments>
+sr = 44100
+ksmps = 32
+nchnls = 2
+0dbfs = 1
+
+instr 1
+    icps = cpspch(p4)
+    iamp = p5
+    asig pluck iamp, icps, icps, 0, 1
+    outs asig, asig
+endin
+
+</CsInstruments>
+<CsScore>
+f 1 0 16384 10 1
+
+i 1 0 1 8.00 0.5
+i 1 + . 8.02 .
+i 1 + . 8.04 .
+i 1 + . 8.05 .
+
+e
+</CsScore>
+</CsoundSynthesizer>
+```
+
+### MIDI-triggered synthesizer
+
+```xml
+<CsoundSynthesizer>
+<CsOptions>
+-M0 -odac -b256 -B1024
+</CsOptions>
+<CsInstruments>
+sr = 48000
+ksmps = 32
+nchnls = 2
+0dbfs = 1
+
+massign 0, 1
+
+instr 1
+    icps cpsmidi
+    iamp ampmidi 0.5
+    kcut ctrl7 1, 500, 5000
+    
+    asig vco2 iamp, icps
+    asig moogladder asig, kcut, 0.7
+    aenv linsegr 0, 0.01, 1, 0.1, 0
+    
+    outs asig * aenv, asig * aenv
+endin
+
+</CsInstruments>
+<CsScore>
+f 0 3600
+</CsScore>
+</CsoundSynthesizer>
+```
+
+### Multi-instrument composition
+
+From the Xanadu example:
+
+```xml
+<CsoundSynthesizer>
+<CsOptions>
+csound -R -W -f -d -o dac
+</CsOptions>
+<CsInstruments>
+sr = 48000
+ksmps = 128
+nchnls = 2
+
+instr 1
+    ishift = .00666667
+    ipch = cpspch(p5)
+    ioct = octpch(p5)
+    kvib oscili 1/120, ipch/50, 1
+    ag pluck 2000, cpsoct(ioct+kvib), 1000, 1, 1
+    agleft pluck 2000, cpsoct(ioct+ishift), 1000, 1, 1
+    agright pluck 2000, cpsoct(ioct-ishift), 1000, 1, 1
+    af1 expon .1, p3, 1.0
+    af2 expon 1.0, p3, .1
+    adump delayr 2.0
+    atap1 deltapi af1
+    atap2 deltapi af2
+    ad1 deltap 2.0
+    ad2 deltap 1.1
+    delayw ag
+    out agleft+atap1+ad1, agright+atap2+ad2
+endin
+
+instr 3
+    ishift = .00666667
+    ipch = cpspch(p5)
+    ioct = octpch(p5)
+    aadsr linseg 0, p3/3, 1.0, p3/3, 1.0, p3/3, 0
+    amodi linseg 0, p3/3, 5, p3/3, 3, p3/3, 0
+    amodr linseg p6, p3, p7
+    a1 = amodi*(amodr-1/amodr)/2
+    a1ndx = abs(a1*2/20)
+    a2 = amodi*(amodr+1/amodr)/2
+    a3 tablei a1ndx, 3, 1
+    ao1 oscili a1, ipch, 2
+    a4 = exp(-0.5*a3+ao1)
+    ao2 oscili a2*ipch, ipch, 2
+    aoutl oscili 1000*aadsr*a4, ao2+cpsoct(ioct+ishift), 1
+    aoutr oscili 1000*aadsr*a4, ao2+cpsoct(ioct-ishift), 1
+    out aoutl, aoutr
+endin
+
+</CsInstruments>
+<CsScore>
+f1 0 65536 10 1
+f2 0 65536 11 1
+f3 0 65536 -12 20.0
+
+i3 0 15 0 7.06 2.0 0.2
+i3 . . . 8.01 . .
+i3 . . . 8.06 . .
+
+e
+</CsScore>
+</CsoundSynthesizer>
+```
+
+## Binary file formats
+
+### Audio files
+
+Csound can read various audio formats:
+
+- WAV (`.wav`)
+- AIFF (`.aif`, `.aiff`)
+- FLAC (`.flac`)
+- OGG Vorbis (`.ogg`)
+- MP3 (`.mp3`) - read-only
+- AU (`.au`)
+- Raw (`.raw`)
+
+Used with:
+- `diskin2` opcode
+- GEN01 function tables
+- `-i` input flag
+
+### MIDI files
+
+Csound reads Standard MIDI Files (`.mid`):
+
+```bash
+csound -F input.mid -odac synth.csd
+```
+
+### Analysis files
+
+Csound generates and reads various analysis formats:
+
+- PVOC-EX (`.pvx`) - phase vocoder
+- ATS (`.ats`) - analysis-transformation-synthesis
+- HETRO (`.het`) - heterodyne analysis
+
+## File organization best practices
+
+### Project structure
+
+```
+project/
+├── main.csd
+├── instruments/
+│   ├── synth.orc
+│   └── effects.orc
+├── scores/
+│   ├── melody.sco
+│   └── bass.sco
+├── samples/
+│   └── kick.wav
+└── includes/
+    └── macros.txt
+```
+
+### Include files
+
+Include external files in CSD:
+
+```xml
+<CsInstruments>
+#include "instruments/synth.orc"
+#include "instruments/effects.orc"
+
+sr = 44100
+ksmps = 32
+nchnls = 2
+0dbfs = 1
+
+</CsInstruments>
+```
+
+### Multiple CSD files
+
+Use separate CSD files for different purposes:
+
+- `live.csd` - Real-time performance
+- `render.csd` - High-quality offline rendering  
+- `test.csd` - Testing and development
+
+## Reading CSD files programmatically
+
+In the Csound API:
+
+```c
+csoundCompile(csound, 2, (const char *[]){"csound", "file.csd"});
+```
+
+Or compile from string:
+
+```c
+csoundCompileCsdText(csound, csd_text);
+```

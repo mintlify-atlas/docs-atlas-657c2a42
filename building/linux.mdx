@@ -1,0 +1,270 @@
+---
+title: Linux build instructions
+description: Build Csound from source on Linux
+---
+
+## Prerequisites
+
+Before building Csound on Linux, ensure you have:
+
+- CMake
+- GCC or Clang compiler toolchain
+- Bison and Flex
+
+See [Build requirements](/building/requirements) for complete details.
+
+## Method 1: Ubuntu/Debian with apt-get
+
+This is the recommended approach for Ubuntu and Debian-based distributions.
+
+<Steps>
+  <Step title="Install dependencies">
+    ```bash
+    sudo apt-get update
+    sudo apt-get install cmake libsndfile1-dev libasound2-dev libjack-dev \
+      portaudio19-dev libportmidi-dev libpulse-dev swig liblua5.1-0-dev \
+      default-jdk libfltk1.1-dev libfluidsynth-dev liblo-dev fluid \
+      ladspa-sdk libpng-dev dssi-dev libstk0-dev libgmm++-dev bison flex \
+      libportsmf-dev libeigen3-dev libcunit1-dev gettext libsamplerate0-dev \
+      libpipewire-0.3-dev
+    ```
+  </Step>
+
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/csound/csound.git
+    cd csound
+    ```
+  </Step>
+
+  <Step title="Create build directory">
+    ```bash
+    mkdir build
+    cd build
+    ```
+  </Step>
+
+  <Step title="Configure the build">
+    ```bash
+    cmake ..
+    ```
+
+    Or with custom options:
+    ```bash
+    cmake .. -DUSE_MP3=0 -DUSE_DOUBLE=0 -DBUILD_TESTS=1 -DBUILD_STATIC_LIBRARY=1
+    ```
+  </Step>
+
+  <Step title="Build Csound">
+    ```bash
+    make
+    ```
+
+    For faster builds using multiple cores:
+    ```bash
+    make -j$(nproc)
+    ```
+  </Step>
+
+  <Step title="Run tests (optional)">
+    ```bash
+    make test
+    make csdtests
+    ```
+  </Step>
+
+  <Step title="Install">
+    Install the software (requires super-user access):
+
+    ```bash
+    sudo make install
+    ```
+
+    The default installation location is `/usr/local`.
+  </Step>
+</Steps>
+
+## Method 2: Using vcpkg for dependencies
+
+Use vcpkg to manage dependencies automatically:
+
+<Steps>
+  <Step title="Clone repository with submodules">
+    ```bash
+    git clone --recurse-submodules https://github.com/csound/csound.git
+    cd csound
+    ```
+  </Step>
+
+  <Step title="Bootstrap vcpkg">
+    ```bash
+    ./vcpkg/bootstrap-vcpkg.sh
+    ```
+  </Step>
+
+  <Step title="Install system dependencies">
+    Some dependencies still need to be installed from the system:
+
+    ```bash
+    sudo apt-get update
+    sudo apt-get install cmake libjack-dev libpulse-dev ladspa-sdk \
+      dssi-dev autoconf libtool
+    ```
+  </Step>
+
+  <Step title="Configure build">
+    ```bash
+    cmake -B build -S . -DBUILD_TESTS=1 -DUSE_VCPKG=1 \
+      -DCUSTOM_CMAKE="./platform/linux/custom.cmake" -DBUILD_PLUGINS=1
+    ```
+  </Step>
+
+  <Step title="Build Csound">
+    ```bash
+    cmake --build build --config Release
+    ```
+  </Step>
+
+  <Step title="Run tests (optional)">
+    ```bash
+    cmake --build build --target test csdtests
+    ```
+  </Step>
+
+  <Step title="Install">
+    ```bash
+    sudo cmake --build build --target install
+    ```
+  </Step>
+</Steps>
+
+## Other distributions
+
+For other Linux distributions, adapt the package installation commands to your package manager:
+
+<CodeGroup>
+```bash Fedora/RHEL
+sudo dnf install cmake libsndfile-devel alsa-lib-devel jack-audio-connection-kit-devel \
+  portaudio-devel portmidi-devel pulseaudio-libs-devel swig lua-devel \
+  java-devel fltk-devel fluidsynth-devel liblo-devel ladspa-devel \
+  libpng-devel dssi-devel bison flex libsamplerate-devel gettext-devel
+```
+
+```bash Arch Linux
+sudo pacman -S cmake libsndfile alsa-lib jack2 portaudio portmidi libpulse \
+  swig lua java-environment fltk fluidsynth liblo ladspa libpng dssi \
+  bison flex libsamplerate gettext
+```
+
+```bash openSUSE
+sudo zypper install cmake libsndfile-devel alsa-devel libjack-devel \
+  portaudio-devel portmidi-devel libpulse-devel swig lua-devel \
+  java-devel fltk-devel fluidsynth-devel liblo-devel ladspa-devel \
+  libpng-devel dssi-devel bison flex libsamplerate-devel gettext-tools
+```
+</CodeGroup>
+
+Then follow the same build steps as for Ubuntu.
+
+## Customizing the build
+
+You can customize the build by:
+
+- Using CMake options (see [Build requirements](/building/requirements#useful-cmake-options))
+- Creating a custom CMake file: `cmake -DCUSTOM_CMAKE=./platform/linux/custom.cmake`
+- Setting `CMAKE_INSTALL_PREFIX` to install in a custom location
+
+## Common build configurations
+
+### Minimal build
+
+Build with minimal dependencies:
+
+```bash
+cmake -B build -DUSE_LIBSNDFILE=0 -DBUILD_PLUGINS=0
+cmake --build build
+```
+
+### Build with all plugins
+
+Build all external opcodes as plugin libraries:
+
+```bash
+cmake -B build -DBUILD_PLUGINS=1
+cmake --build build
+```
+
+### Debug build
+
+Build with debug symbols:
+
+```bash
+cmake -B build -DCMAKE_BUILD_TYPE=Debug
+cmake --build build
+```
+
+### Static library build
+
+Build Csound as a static library:
+
+```bash
+cmake -B build -DBUILD_STATIC_LIBRARY=1
+cmake --build build
+```
+
+## Troubleshooting
+
+### Missing dependencies
+
+If you get errors about missing headers or libraries, ensure all development packages are installed. Look for packages ending in `-dev` (Debian/Ubuntu) or `-devel` (Fedora/RHEL).
+
+### JACK not found
+
+If JACK support is not detected:
+
+```bash
+# Ubuntu/Debian
+sudo apt-get install libjack-dev
+
+# Fedora/RHEL
+sudo dnf install jack-audio-connection-kit-devel
+```
+
+### PipeWire support
+
+For PipeWire support (on newer systems):
+
+```bash
+sudo apt-get install libpipewire-0.3-dev
+```
+
+### Bison or Flex version too old
+
+Csound requires recent versions of Bison (3.8+) and Flex (2.6+). If your distribution provides older versions, you may need to build them from source:
+
+```bash
+# Build Bison from source
+wget https://ftp.gnu.org/gnu/bison/bison-3.8.tar.gz
+tar xzf bison-3.8.tar.gz
+cd bison-3.8
+./configure --prefix=$HOME/.local
+make && make install
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+### Permission denied during install
+
+If you don't have sudo access, install to a custom location:
+
+```bash
+cmake -B build -DCMAKE_INSTALL_PREFIX=$HOME/.local
+cmake --build build
+cmake --build build --target install
+```
+
+Then add to your shell profile:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+export LD_LIBRARY_PATH="$HOME/.local/lib:$LD_LIBRARY_PATH"
+```

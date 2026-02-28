@@ -1,0 +1,345 @@
+---
+title: Performance functions
+description: Functions for real-time audio performance and control
+---
+
+## csoundStart
+
+```c
+int32_t csoundStart(CSOUND *csound);
+```
+
+Prepare Csound for performance. This function must be called after compilation and before `csoundPerformKsmps()`.
+
+Behavior depends on calling order:
+- **After compilation**: Score preprocessing is performed, performance terminates when score ends
+- **Before compilation**: No score preprocessing, "i" statements are real-time events, performance continues indefinitely
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  `CSOUND_SUCCESS` (0) on success, non-zero error code on failure
+</ResponseField>
+
+### Example: Traditional workflow
+
+```c
+CSO UND *csound = csoundCreate(NULL, NULL);
+
+// Compile, then start
+csoundCompile(csound, argc, argv);
+csoundStart(csound);
+
+while (!csoundPerformKsmps(csound)) {
+    // Performance loop
+}
+
+csoundDestroy(csound);
+```
+
+### Example: Real-time workflow
+
+```c
+CSO UND *csound = csoundCreate(NULL, NULL);
+
+csoundSetOption(csound, "-odac");
+
+// Start first for indefinite real-time mode
+csoundStart(csound);
+
+// Then compile instruments
+csoundCompileOrc(csound, orc_code, 0);
+
+// Send real-time events
+csoundEventString(csound, "i 1 0 -1", 0);
+
+while (running) {
+    csoundPerformKsmps(csound);
+}
+```
+
+## csoundPerformKsmps
+
+```c
+int32_t csoundPerformKsmps(CSOUND *csound);
+```
+
+Sense input events and perform one block of audio output containing `ksmps` frames. `csoundStart()` must be called first.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ResponseField name="return" type="int32_t">
+  - `0` (false) during performance
+  - Non-zero (true) when performance is finished
+</ResponseField>
+
+### Example: Basic performance loop
+
+```c
+csoundStart(csound);
+
+while (!csoundPerformKsmps(csound)) {
+    // Optionally process audio buffers or send events
+}
+
+printf("Performance complete\n");
+```
+
+### Example: With audio I/O
+
+```c
+int ksmps = csoundGetKsmps(csound);
+MYFLT *spin = csoundGetSpin(csound);
+const MYFLT *spout = csoundGetSpout(csound);
+
+csoundStart(csound);
+
+while (!csoundPerformKsmps(csound)) {
+    // Write input audio to spin buffer
+    for (int i = 0; i < ksmps; i++) {
+        spin[i] = getAudioInput();
+    }
+    
+    // Perform audio processing
+    csoundPerformKsmps(csound);
+    
+    // Read output audio from spout buffer
+    for (int i = 0; i < ksmps; i++) {
+        sendAudioOutput(spout[i]);
+    }
+}
+```
+
+### Example: Frame-accurate event scheduling
+
+```c
+int frame_count = 0;
+csoundStart(csound);
+
+while (!csoundPerformKsmps(csound)) {
+    // Trigger event at specific frame
+    if (frame_count == 44100) { // After 1 second at 44.1kHz
+        csoundEventString(csound, "i 2 0 0.5", 1);
+    }
+    frame_count++;
+}
+```
+
+## csoundReset
+
+```c
+void csoundReset(CSOUND *csound);
+```
+
+Reset all internal memory and state in preparation for a new performance. Enables running successive Csound performances without recreating the Csound instance.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+### Example: Multiple performances
+
+```c
+CSO UND *csound = csoundCreate(NULL, NULL);
+
+// First performance
+csoundCompile(csound, argc1, argv1);
+csoundStart(csound);
+while (!csoundPerformKsmps(csound));
+
+// Reset for second performance
+csoundReset(csound);
+
+// Second performance
+csoundCompile(csound, argc2, argv2);
+csoundStart(csound);
+while (!csoundPerformKsmps(csound));
+
+csoundDestroy(csound);
+```
+
+## csoundGetKsmps
+
+```c
+uint32_t csoundGetKsmps(CSOUND *csound);
+```
+
+Returns the audio vector size in frames (equals `sr / kr`).
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ResponseField name="return" type="uint32_t">
+  Number of audio frames per control period
+</ResponseField>
+
+### Example
+
+```c
+uint32_t ksmps = csoundGetKsmps(csound);
+printf("Audio vector size: %u frames\n", ksmps);
+
+// Allocate buffer for one k-period
+MYFLT *buffer = (MYFLT*)malloc(ksmps * sizeof(MYFLT));
+```
+
+## csoundGetSr
+
+```c
+MYFLT csoundGetSr(CSOUND *csound);
+```
+
+Returns the number of audio sample frames per second (sample rate).
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ResponseField name="return" type="MYFLT">
+  Sample rate in Hz
+</ResponseField>
+
+### Example
+
+```c
+MYFLT sr = csoundGetSr(csound);
+MYFLT kr = csoundGetKr(csound);
+uint32_t ksmps = csoundGetKsmps(csound);
+
+printf("Sample rate: %.0f Hz\n", sr);
+printf("Control rate: %.0f Hz\n", kr);
+printf("ksmps: %u (sr/kr = %.0f/%0.f)\n", ksmps, sr, kr);
+```
+
+## csoundGetKr
+
+```c
+MYFLT csoundGetKr(CSOUND *csound);
+```
+
+Returns the number of control samples per second (control rate).
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ResponseField name="return" type="MYFLT">
+  Control rate in Hz
+</ResponseField>
+
+## csoundGetChannels
+
+```c
+uint32_t csoundGetChannels(CSOUND *csound, int32_t isInput);
+```
+
+Returns the number of audio channels in the Csound instance.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ParamField path="isInput" type="int32_t" required>
+  - `0` to get output channels (`nchnls`)
+  - Non-zero to get input channels (`nchnls_i`, defaults to `nchnls` if not set)
+</ParamField>
+
+<ResponseField name="return" type="uint32_t">
+  Number of audio channels
+</ResponseField>
+
+### Example
+
+```c
+uint32_t out_channels = csoundGetChannels(csound, 0);
+uint32_t in_channels = csoundGetChannels(csound, 1);
+
+printf("Output channels: %u\n", out_channels);
+printf("Input channels: %u\n", in_channels);
+```
+
+## csoundGet0dBFS
+
+```c
+MYFLT csoundGet0dBFS(CSOUND *csound);
+```
+
+Returns the 0dBFS level of the audio buffers.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ResponseField name="return" type="MYFLT">
+  0dBFS level (typically 1.0 or 32768.0)
+</ResponseField>
+
+### Example
+
+```c
+MYFLT dbfs = csoundGet0dBFS(csound);
+printf("0dBFS = %f\n", dbfs);
+
+// Scale amplitude
+MYFLT normalized_amp = 0.5; // -6dB
+MYFLT actual_amp = normalized_amp * dbfs;
+```
+
+## csoundGetScoreTime
+
+```c
+double csoundGetScoreTime(CSOUND *csound);
+```
+
+Returns the current score time in seconds since the beginning of performance.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ResponseField name="return" type="double">
+  Current score time in seconds
+</ResponseField>
+
+### Example
+
+```c
+while (!csoundPerformKsmps(csound)) {
+    double score_time = csoundGetScoreTime(csound);
+    if (score_time >= 10.0 && !triggered) {
+        csoundEventString(csound, "i 99 0 1", 1);
+        triggered = 1;
+    }
+}
+```
+
+## csoundGetCurrentTimeSamples
+
+```c
+int64_t csoundGetCurrentTimeSamples(CSOUND *csound);
+```
+
+Return the current performance time in sample frames.
+
+<ParamField path="csound" type="CSOUND*" required>
+  The Csound instance
+</ParamField>
+
+<ResponseField name="return" type="int64_t">
+  Current time in sample frames
+</ResponseField>
+
+### Example
+
+```c
+int64_t samples = csoundGetCurrentTimeSamples(csound);
+MYFLT sr = csoundGetSr(csound);
+double seconds = (double)samples / sr;
+
+printf("Performance time: %.3f seconds (%lld samples)\n", seconds, samples);
+```
